@@ -22,4 +22,4 @@
 - Windows 10 / 11
 - Python 3.8+
 - Права администратора
-- pydivert — Python-обёртка над WinDivert
+- pip install pydivert
