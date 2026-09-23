@@ -1,7 +1,7 @@
 import sys
 import tkinter as tk
-from tkinter import messagebox
 
+from tkinter import messagebox
 from config import APP_TITLE
 from dpi import App, is_admin
 
