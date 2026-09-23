@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-
 APP_TITLE = "PY-DPI"
 WINDOW_SIZE = "900x720"
 WINDOW_MIN_SIZE = (660, 500)
@@ -81,7 +80,6 @@ class Config:
 
 
 CONFIG = Config()
-
 
 DEFAULT_DOMAINS = [
     "facebook.com", "fb.com", "fbcdn.net", "fbsbx.com", "messenger.com",
