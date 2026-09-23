@@ -31,7 +31,7 @@
 
 ## Ограничения
 
-- Только Windows, только TLS ClientHello по SNI
-- ECH (Encrypted Client Hello) обойти нельзя
+- Только Windows
+- ECH обойти нельзя
 - Блокировки по IP не обходит
 - Это не VPN/прокси — трафик идёт напрямую
