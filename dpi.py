@@ -602,7 +602,11 @@ class DpiBypass:
 
                 host_bytes = payload[value_start:value_end]
 
-                if b"]" not in host_bytes:
+                if host_bytes.startswith(b"["):
+                    close = host_bytes.find(b"]")
+                    if close >= 0:
+                        host_bytes = host_bytes[:close + 1]
+                else:
                     sep = host_bytes.find(HOST_PORT_SEP)
                     if sep >= 0:
                         host_bytes = host_bytes[:sep]
