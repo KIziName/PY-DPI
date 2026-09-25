@@ -73,7 +73,7 @@ class Config:
     )
     windivert_test_filter: str = "tcp or udp"
     test_duration_s: int = 5
-    pending_max_bytes: int = 16384
+    pending_max_bytes: int = 8192
     pending_timeout_s: float = 2.0
     pending_flush_interval_s: float = 0.5
     block_quic: bool = True
