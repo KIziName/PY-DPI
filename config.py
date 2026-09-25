@@ -13,7 +13,7 @@ LOG_TEXT_HEIGHT = 14
 MODE_COMBO_WIDTH = 12
 
 APP_AUTHOR = "KiziName"
-APP_VERSION = "V0.5"
+APP_VERSION = "V0.9"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
 
