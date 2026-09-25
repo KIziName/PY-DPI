@@ -31,7 +31,7 @@ PORT_HTTPS = 443
 FAKE_SNI_BASE = b"www.microsoft.com"
 HTTP_METHODS = (
     b"GET ", b"POST", b"HEAD", b"PUT ", b"DELE",
-    b"OPTI", b"PATC", b"CONN", b"TRAC",
+    b"OPTI", b"PATC", b"CONN", b"TRAC", b"PRI ",
 )
 HTTP_HEADER_MAX_SCAN = 2048
 
