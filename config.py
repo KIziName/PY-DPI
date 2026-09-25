@@ -49,7 +49,7 @@ CHECKSUM_MASK = 0xFFFF
 CHECKSUM_FLIP = 0x0001
 
 TTL_MIN = 1
-TTL_MAX = 20
+TTL_MAX = 12
 
 CRLF = b"\r\n"
 CRLFCRLF = b"\r\n\r\n"
