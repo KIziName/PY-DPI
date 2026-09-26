@@ -261,7 +261,7 @@ class DpiBypass:
             return copy.deepcopy(packet)
 
     def _send_one(self, packet):
-            w = self.w
+        w = self.w
         if w is None:
             return
         try:
