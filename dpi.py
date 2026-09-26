@@ -346,16 +346,16 @@ class DpiBypass:
             return False
 
         if packet.ipv6 is not None:
-        try:
-            addr = ipaddress.ip_address(packet.ipv6.dst_addr)
-        except Exception:
+            try:
+                addr = ipaddress.ip_address(packet.ipv6.dst_addr)
+            except Exception:
+                return False
+            for net in _WHITELIST_V6_NETS:
+                if addr in net:
+                    return True
             return False
-        for net in _WHITELIST_V6_NETS:
-            if addr in net:
-                return True
-        return False
 
-    return False
+        return False
 
     def run(self):
         pkt_queue = queue.Queue(maxsize=5000)
