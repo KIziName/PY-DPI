@@ -70,6 +70,14 @@ IP_WHITELIST_V4 = [
     "255.255.255.255/32",
 ]
 
+IP_WHITELIST_V6 = [
+    "::1/128",       
+    "::/128",          
+    "fc00::/7",     
+    "fe80::/10",       
+    "ff00::/8",         
+]
+
 
 def build_windivert_filter() -> str:
     return (
