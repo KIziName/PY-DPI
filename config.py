@@ -74,11 +74,14 @@ IP_WHITELIST_V4 = [
 
 def _v4_clause(cidr: str) -> str:
     net = ipaddress.ip_network(cidr)
-    if net.num_addresses == 1:
-        return f"ip.DstAddr != {net.network_address}"
-    return (
-        f"not (ip.DstAddr >= {net.network_address} "
-        f"and ip.DstAddr <= {net.broadcast_address})"
+
+    if net.prefixlen == 32:
+        return f"ip.DstAddr != 0x{int(net.network_address):08X}"
+
+     mask = int(net.netmask)
+     return (
+        f"(ip.DstAddr & 0x{mask:08X}) "
+        f"!= 0x{int(net.network_address):08X}"
     )
 
 
