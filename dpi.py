@@ -345,7 +345,7 @@ class DpiBypass:
                     return True
             return False
 
-    if packet.ipv6 is not None:
+        if packet.ipv6 is not None:
         try:
             addr = ipaddress.ip_address(packet.ipv6.dst_addr)
         except Exception:
