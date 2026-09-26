@@ -78,8 +78,8 @@ def _v4_clause(cidr: str) -> str:
     if net.prefixlen == 32:
         return f"ip.DstAddr != 0x{int(net.network_address):08X}"
 
-     mask = int(net.netmask)
-     return (
+    mask = int(net.netmask)
+    return (
         f"(ip.DstAddr & 0x{mask:08X}) "
         f"!= 0x{int(net.network_address):08X}"
     )
