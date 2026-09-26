@@ -18,7 +18,7 @@ from tkinter import ttk, scrolledtext, messagebox
 from config import (APP_TITLE, APP_AUTHOR, APP_VERSION, APP_GITHUB,WINDOW_SIZE, WINDOW_MIN_SIZE,LOG_POLL_MS, STATS_POLL_MS, MAX_LOG_LINES,LOG_FONT, DOMAINS_TEXT_HEIGHT, LOG_TEXT_HEIGHT, MODE_COMBO_WIDTH,MODES, 
 DEFAULT_MODE, MODES_SPLIT, DEFAULT_SPLIT, PORT_HTTP, PORT_HTTPS, FAKE_SNI_BASE,TLS_CONTENT_HANDSHAKE, TLS_HANDSHAKE_CLIENT_HELLO, TLS_SNI_EXT_TYPE,TLS_RECORD_HEADER_LEN, 
 TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN, SEQ_MASK, SEQ_HALF, CHECKSUM_MASK, CHECKSUM_FLIP, TTL_MIN, TTL_MAX,DOT_BYTE, HTTP_METHODS, HTTP_HEADER_MAX_SCAN, HOST_HEADER, HOST_PORT_SEP, CRLF, CRLFCRLF, Config, CONFIG,
-DEFAULT_DOMAINS, IP_WHITELIST_V4,
+DEFAULT_DOMAINS, IP_WHITELIST_V4, IP_WHITELIST_V6,   
 )
 
 try:
@@ -30,6 +30,10 @@ SHUTDOWN_GRACE_S = 0.5
 
 _WHITELIST_V4_NETS = tuple(
     ipaddress.ip_network(c) for c in IP_WHITELIST_V4
+)
+
+_WHITELIST_V6_NETS = tuple(
+    ipaddress.ip_network(c) for c in IP_WHITELIST_V6
 )
 
 
@@ -331,16 +335,27 @@ class DpiBypass:
 
     @staticmethod
     def _is_dst_local(packet) -> bool:
-        if packet.ipv4 is None:
+        if packet.ipv4 is not None:
+            try:
+                addr = ipaddress.ip_address(packet.ipv4.dst_addr)
+            except Exception:
+                return False
+            for net in _WHITELIST_V4_NETS:
+                if addr in net:
+                    return True
             return False
+
+    if packet.ipv6 is not None:
         try:
-            addr = ipaddress.ip_address(packet.ipv4.dst_addr)
+            addr = ipaddress.ip_address(packet.ipv6.dst_addr)
         except Exception:
             return False
-        for net in _WHITELIST_V4_NETS:
+        for net in _WHITELIST_V6_NETS:
             if addr in net:
                 return True
         return False
+
+    return False
 
     def run(self):
         pkt_queue = queue.Queue(maxsize=5000)
