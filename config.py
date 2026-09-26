@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-import ipaddress
 
 APP_TITLE = "PY-DPI"
 WINDOW_SIZE = "900x720"
@@ -72,28 +71,11 @@ IP_WHITELIST_V4 = [
 ]
 
 
-def _v4_clause(cidr: str) -> str:
-    net = ipaddress.ip_network(cidr)
-
-    if net.prefixlen == 32:
-        return f"ip.DstAddr != 0x{int(net.network_address):08X}"
-
-    mask = int(net.netmask)
-    return (
-        f"(ip.DstAddr & 0x{mask:08X}) "
-        f"!= 0x{int(net.network_address):08X}"
-    )
-
-
 def build_windivert_filter() -> str:
     parts = [
         f"(tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP} "
         f"or udp.DstPort == {PORT_HTTPS})"
     ]
-    for cidr in IP_WHITELIST_V4:
-        parts.append("and " + _v4_clause(cidr))
-    return " ".join(parts)
-
 
 @dataclass(frozen=True)
 class Config:
