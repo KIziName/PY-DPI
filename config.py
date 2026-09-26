@@ -100,10 +100,7 @@ class Config:
     fake_repeats: int = 1
     fake_badsum: bool = True
     split_pos: str = DEFAULT_SPLIT
-    windivert_filter: str = (
-        f"(tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP} "
-        f"or udp.DstPort == {PORT_HTTPS})"
-    )
+    windivert_filter: str = build_windivert_filter()
     windivert_test_filter: str = "tcp or udp"
     test_duration_s: int = 5
     pending_max_bytes: int = 8192
