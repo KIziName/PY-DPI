@@ -72,10 +72,10 @@ IP_WHITELIST_V4 = [
 
 
 def build_windivert_filter() -> str:
-    parts = [
+    return (
         f"(tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP} "
         f"or udp.DstPort == {PORT_HTTPS})"
-    ]
+    )
 
 @dataclass(frozen=True)
 class Config:
