@@ -182,14 +182,14 @@ class DpiBypass:
         remaining = []
         with self._pq_cond:
             while self._pq:
-                _, _, func = heapq.heappop(self._pq)
-                remaining.append(func)
+                 _, _, func = heapq.heappop(self._pq)
+                 remaining.append(func)
         for func in remaining:
             try:
                 func()
             except Exception:
                 pass
-
+            
         with self._pending_lock:
             pending_states = list(self._pending.values())
             self._pending.clear()
