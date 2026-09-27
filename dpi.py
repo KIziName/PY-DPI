@@ -1082,7 +1082,7 @@ class App:
 
     def _on_close(self):
         try:
-            if self.bypass is not None and self.bypass.running:
+            if self.thread is not None:
                 self._stop_bypass()
         except Exception:
             pass
@@ -1240,7 +1240,7 @@ class App:
             self._set_controls_enabled(True)
 
     def toggle(self):
-        if self.bypass is not None and self.bypass.running:
+        if self.thread is not None:        
             self._stop_bypass()
             return
 
@@ -1260,9 +1260,6 @@ class App:
         if pydivert is None:
             messagebox.showerror("Ошибка", "pip install pydivert")
             return
-
-        if self.thread is not None and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
 
         domains = [d.strip() for d in
                    self.domains_text.get("1.0", tk.END).splitlines()
@@ -1341,8 +1338,9 @@ class App:
     def _on_bypass_done(self, gen):
         if gen != self._bypass_gen:
             return
-        if self.bypass is None or not self.bypass.running:
-            self._reset_ui()
+        self.bypass = None
+        self.thread = None
+        self._reset_ui()
 
     def fill_domains(self):
         self.domains_text.config(state=tk.NORMAL)
