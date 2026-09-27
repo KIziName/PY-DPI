@@ -105,45 +105,27 @@ class Config:
 CONFIG = Config()
 
 DEFAULT_DOMAINS = [
-    "facebook.com", "fb.com", "fbcdn.net", "fbsbx.com", "messenger.com",
-    "instagram.com", "cdninstagram.com", "threads.net", "threads.com",
-
-    "whatsapp.com", "whatsapp.net", "wa.me",
-
-    "twitter.com", "x.com", "twimg.com", "t.co",
-
-    "discord.com", "discordapp.com", "discord.gg",
-
-    "telegram.org", "telegram.me", "telegram.dog",
-    "t.me", "telegra.ph", "tg.dev", "telesco.pe",
-
-    "signal.org", "signal.me", "whispersystems.org",
-
+    "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
+    "messenger.com", "m.me", "facebook.net",
+    "instagram.com", "cdninstagram.com",
+    "threads.net",
+    "whatsapp.com", "whatsapp.net", "wa.me", "whatsapp.org",
+    "viber.com", "vb.me", "viber.me", "viber.net", "viber.co",
+    "vibercdn.com",
+    "twitter.com", "x.com", "twimg.com", "t.co", "x.ai",
+    "discord.com", "discordapp.com", "discordapp.net", "discord.gg",
+    "discord.media", "discordactivities.com", "discord.co",
+    "discord.new", "discord.gift",
+    "telegram.org", "t.me", "telegram.me", "telegra.ph",
+    "telesco.pe", "cdn-telegram.org", "tg.dev",
     "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
     "ggpht.com", "youtubei.googleapis.com", "youtube.googleapis.com",
-
     "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
-
-    "reddit.com", "redd.it", "redditstatic.com", "redditmedia.com",
-
-    "twitch.tv", "ttvnw.net", "jtvnw.net",
-
-    "torproject.org", "torproject.net",
-
-    "dns.google", "dns.quad9.net",
-    "nextdns.io", "dns.nextdns.io",
-    "adguard-dns.io", "dns.adguard.com",
-    "doh.opendns.com", "doh.dns.sb",
-    "dns.mullvad.net", "mullvad.net",
-
-    "protonvpn.com", "protonvpn.net", "proton.me", "protonmail.com",
-    "nordvpn.com", "nordvpn.net",
-    "expressvpn.com", "expressvpn.net",
-    "surfshark.com", "surfshark.net",
-    "windscribe.com", "windscribe.net",
-    "tunnelbear.com", "tunnelbear.net",
-    "mullvad.com",
-    "ivpn.net",
-    "amnezia.org", "amneziavpn.com",
-    "getoutline.org",
+    "snapchat.com", "snap.com", "sc-cdn.net", "sc-gw.com", "snapkit.com",
+    "roblox.com", "rbxcdn.com", "rbx.com", "roblox.org",
+    "github.com", "githubusercontent.com", "githubassets.com", "github.io",
+    "torproject.org", "torproject.net", "tor.eff.org", "meek.azureedge.net",
+    "dns.google", "dns.quad9.net", "dns.nextdns.io",
+    "cloudflare-dns.com", "one.one.one.one",
+    "dns.adguard.com", "doh.opendns.com",
 ]
