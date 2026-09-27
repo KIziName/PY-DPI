@@ -339,7 +339,7 @@ class DpiBypass:
             try:
                 addr = ipaddress.ip_address(packet.ipv4.dst_addr)
             except Exception:
-                return False
+                return True
             for net in _WHITELIST_V4_NETS:
                 if addr in net:
                     return True
@@ -349,7 +349,7 @@ class DpiBypass:
             try:
                 addr = ipaddress.ip_address(packet.ipv6.dst_addr)
             except Exception:
-                return False
+                return True
             for net in _WHITELIST_V6_NETS:
                 if addr in net:
                     return True
