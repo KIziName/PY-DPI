@@ -1146,7 +1146,7 @@ class App:
             messagebox.showerror("Тест", "pip install pydivert")
             return
 
-        if self.bypass is not None and self.bypass.running:
+        if self.thread is not None:
             messagebox.showinfo("Тест", "Сначала останови обход.")
             return
 
@@ -1236,7 +1236,7 @@ class App:
     @on_ui
     def _on_test_done(self):
         self._test_running = False
-        if self.bypass is None or not self.bypass.running:
+        if self.thread is None:
             self._set_controls_enabled(True)
 
     def toggle(self):
