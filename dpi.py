@@ -165,8 +165,7 @@ class DpiBypass:
                 wait = 0.1
                 if self._pq:
                     wait = min(wait, max(0.0, self._pq[0][0] - time.monotonic()))
-                if wait > 0:
-                    self._pq_cond.wait(wait)
+                self._pq_cond.wait(max(wait, 0.001))
 
     def stop(self):
         if self._stop_event.is_set():
