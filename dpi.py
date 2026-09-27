@@ -178,17 +178,21 @@ class DpiBypass:
         self._worker_thread = None
         if t is not None and t.is_alive() and t is not threading.current_thread():
             t.join(timeout=1.5)
-
-        remaining = []
-        with self._pq_cond:
-            while self._pq:
-                 _, _, func = heapq.heappop(self._pq)
-                 remaining.append(func)
-        for func in remaining:
-            try:
-                func()
-            except Exception:
-                pass
+            
+        drain_deadline = time.monotonic() + SHUTDOWN_GRACE_S
+        while time.monotonic() < drain_deadline:
+            remaining = []
+            with self._pq_cond:
+                while self._pq:
+                    _, _, func = heapq.heappop(self._pq)
+                    remaining.append(func)
+            if not remaining:
+                break
+            for func in remaining:
+                try:
+                    func()
+                except Exception:
+                    pass
             
         with self._pending_lock:
             pending_states = list(self._pending.values())
