@@ -37,6 +37,19 @@ _WHITELIST_V6_NETS = tuple(
 )
 
 
+@functools.lru_cache(maxsize=8192)
+def _ip_is_local(s: str, is_v4: bool) -> bool:
+    nets = _WHITELIST_V4_NETS if is_v4 else _WHITELIST_V6_NETS
+    try:
+        addr = ipaddress.ip_address(s)
+    except Exception:
+        return True
+    for net in nets:
+        if addr in net:
+            return True
+    return False
+
+
 @dataclass
 class PendingState:
     buf: bytes
@@ -75,7 +88,6 @@ def require_admin(title="Ошибка", msg="Нужны права админи�
 
 
 class DpiBypass:
-
     def __init__(self, domains, mode, log_cb, done_cb=None, config=CONFIG):
         self.domains = set()
         for d in domains:
@@ -317,25 +329,9 @@ class DpiBypass:
     @staticmethod
     def _is_dst_local(packet) -> bool:
         if packet.ipv4 is not None:
-            try:
-                addr = ipaddress.ip_address(packet.ipv4.dst_addr)
-            except Exception:
-                return True
-            for net in _WHITELIST_V4_NETS:
-                if addr in net:
-                    return True
-            return False
-
+            return _ip_is_local(packet.ipv4.dst_addr, True)
         if packet.ipv6 is not None:
-            try:
-                addr = ipaddress.ip_address(packet.ipv6.dst_addr)
-            except Exception:
-                return True
-            for net in _WHITELIST_V6_NETS:
-                if addr in net:
-                    return True
-            return False
-
+            return _ip_is_local(packet.ipv6.dst_addr, False)
         return False
 
     def run(self):
@@ -875,7 +871,6 @@ class DpiBypass:
 
 
 class App:
-
     def __init__(self, root):
         self.root = root
         root.title(APP_TITLE)
@@ -1077,7 +1072,7 @@ class App:
                 added = True
 
             if added:
-                total = int(self.log_text.index("end-1c").split(".")[0])
+                total = int(self.log_text.index("end-1c").split(".")[0]) - 1
                 if total > MAX_LOG_LINES:
                     self.log_text.delete(
                         "1.0", f"{total - MAX_LOG_LINES + 1}.0")
@@ -1186,7 +1181,7 @@ class App:
                 if rt is not None and rt.is_alive():
                     rt.join(timeout=1.0)
 
-                self.log(f"— ТЕСТ завершён: поймано {n} пакетов —")
+                self.log(f"— ТЕСТ завершён: переслано {n} пакетов —")
             except Exception:
                 for line in traceback.format_exc().splitlines():
                     self.log("  " + line)
