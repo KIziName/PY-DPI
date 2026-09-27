@@ -94,7 +94,7 @@ class Config:
     fake_badsum: bool = True
     split_pos: str = DEFAULT_SPLIT
     windivert_filter: str = build_windivert_filter()
-    windivert_test_filter: str = "tcp or udp"
+    windivert_test_filter: str = build_windivert_filter()
     test_duration_s: int = 5
     pending_max_bytes: int = 8192
     pending_timeout_s: float = 2.0
