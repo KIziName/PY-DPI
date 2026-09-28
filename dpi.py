@@ -611,15 +611,15 @@ class DpiBypass:
 
         hdr_end = payload.find(CRLFCRLF, first_line_end)
         if hdr_end < 0:
-            hdr_end = len(payload)
-        hdr_end = min(hdr_end, HTTP_HEADER_MAX_SCAN)
+            max_scan = min(len(payload), HTTP_HEADER_MAX_SCAN)
+        else:
+            max_scan = min(hdr_end, HTTP_HEADER_MAX_SCAN)
 
-        max_scan = hdr_end
         pos = first_line_end + 2
 
-        while pos < max_scan:
-            line_end = payload.find(CRLF, pos, max_scan)
-            if line_end < 0:
+        while pos <= max_scan:
+            line_end = payload.find(CRLF, pos)
+            if line_end < 0 or line_end > max_scan:
                 return None
             if line_end == pos:
                 return None
