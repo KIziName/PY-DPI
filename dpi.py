@@ -284,10 +284,10 @@ class DpiBypass:
                 pass
                 
         if w_now is not None and w_now is not w:
-        try:
-            w_now.close()
-        except Exception:
-            pass
+            try:
+                w_now.close()
+            except Exception:
+                pass
 
         if (recv_thread is not None
                 and recv_thread.is_alive()
