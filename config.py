@@ -123,7 +123,7 @@ class DpiConfig:
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.005
     fake_ttl: int = 1
-    fake_repeats: int = 1
+    fake_repeats: int = 2
     fake_badsum: bool = True
     split_pos: str = "midsld"
 
