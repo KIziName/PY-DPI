@@ -916,7 +916,7 @@ class DpiBypass:
         suffix = b".com"
         if n == len(FAKE_SNI_BASE):
             return FAKE_SNI_BASE
-        if n < len(suffix):
+        if n <= len(suffix):
             return None
         if n < len(FAKE_SNI_BASE):
             return b"a" * (n - len(suffix)) + suffix
