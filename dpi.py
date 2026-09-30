@@ -234,16 +234,19 @@ class DpiBypass:
         with self._pending_lock:
             pending_states = list(self._pending.values())
             self._pending.clear()
-        if w is not None:
+            
+        with self._lock:
+            w_now = self.w
+        if w_now is not None:
             for state in pending_states:
                 for p in state.packets:
                     with self._send_lock:
                         try:
-                            w.send(p)
+                            w_now.send(p)
                         except Exception:
                             pass
 
-        if w is not None and pkt_queue is not None:
+        if w_now is not None and pkt_queue is not None:
             t_end = time.monotonic() + RT.shutdown_grace_s
             while time.monotonic() < t_end:
                 if (recv_thread is not None
@@ -256,7 +259,7 @@ class DpiBypass:
                     continue
                 with self._send_lock:
                     try:
-                        w.send(p)
+                        w_now.send(p)
                     except Exception:
                         pass
             while True:
@@ -266,7 +269,7 @@ class DpiBypass:
                     break
                 with self._send_lock:
                     try:
-                        w.send(p)
+                        w_now.send(p)
                     except Exception:
                         pass
 
@@ -279,6 +282,12 @@ class DpiBypass:
                 w.close()
             except Exception:
                 pass
+                
+        if w_now is not None and w_now is not w:
+        try:
+            w_now.close()
+        except Exception:
+            pass
 
         if (recv_thread is not None
                 and recv_thread.is_alive()
