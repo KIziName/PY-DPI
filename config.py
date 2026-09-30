@@ -132,7 +132,7 @@ class DpiConfig:
     pending_max_bytes: int = 8192
     pending_timeout_s: float = 1.0
     pending_max_packets: int = 32
-    pending_flush_interval_s: float = 0.3
+    pending_flush_interval_s: float = 0.2
 
     block_quic: bool = True
 
