@@ -76,7 +76,7 @@ class UiConfig:
     window_size: str = "900x720"
     window_min_size: tuple = (660, 500)
 
-    log_poll_ms: int = 600
+    log_poll_ms: int = 400
     stats_poll_ms: int = 2000
     max_log_lines: int = 500
 
