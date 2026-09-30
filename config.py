@@ -100,7 +100,7 @@ UI = UiConfig()
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    shutdown_grace_s: float = 0.5
+    shutdown_grace_s: float = 1.0
     stop_watchdog_ms: int = 5000
     close_join_timeout_s: float = 2.0
 
@@ -120,8 +120,8 @@ RT = RuntimeConfig()
 
 @dataclass(frozen=True)
 class DpiConfig:
-    disorder_delay_s: float = 0.003
-    fake_split_delay_s: float = 0.003
+    disorder_delay_s: float = 0.005
+    fake_split_delay_s: float = 0.005
     fake_ttl: int = 1
     fake_repeats: int = 1
     fake_badsum: bool = True
@@ -130,8 +130,8 @@ class DpiConfig:
     test_duration_s: int = 5
 
     pending_max_bytes: int = 8192
-    pending_timeout_s: float = 2.0
-    pending_flush_interval_s: float = 0.5
+    pending_timeout_s: float = 1.0
+    pending_flush_interval_s: float = 0.3
 
     block_quic: bool = True
 
