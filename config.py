@@ -102,7 +102,7 @@ UI = UiConfig()
 class RuntimeConfig:
     shutdown_grace_s: float = 1.0
     stop_watchdog_ms: int = 5000
-    close_join_timeout_s: float = 2.0
+    close_join_timeout_s: float = 3.0
 
     packet_queue_maxsize: int = 5000
     worker_join_timeout_s: float = 1.5
