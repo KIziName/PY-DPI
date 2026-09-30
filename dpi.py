@@ -579,14 +579,15 @@ class DpiBypass:
                         if rel + len(payload) <= len(state.buf):
                             return
                         action = ("send", packet)
-                    else:
-                        del self._pending[key]
-                        action = ("flush_fresh", state, key, packet, payload)
+                        else:
+                            del self._pending[key]
+                    action = ("flush_fresh", state, key, packet, payload)
                 else:
                     combined = state.buf + payload
-                    if len(combined) > self.cfg.pending_max_bytes:
-                        del self._pending[key]
-                        action = ("flush_fresh", state, key, packet, payload)
+                    if (len(combined) > self.cfg.pending_max_bytes
+                        or len(state.packets) >= self.cfg.pending_max_packets):
+                            del self._pending[key]
+                            action = ("flush_fresh", state, key, packet, payload)
                     else:
                         kind, data = self._detect_host(combined)
                         if kind == "match":
