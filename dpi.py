@@ -963,7 +963,7 @@ class DpiBypass:
             snapshot = self._clone_packet(packet)
 
             def resend_first():
-                p1 = snapshot
+                p1 = self._clone_packet(snapshot) 
                 p1.payload = first
                 p1.tcp.seq_num = seq
                 p1.tcp.psh = True
