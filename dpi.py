@@ -415,6 +415,15 @@ class DpiBypass:
                                 w = pydivert.WinDivert(
                                     self.cfg.windivert_filter)
                                 w.open()
+                                if self._stop_event.is_set():
+                                    try:
+                                        w.close()
+                                    except Exception:
+                                        pass
+                                    w = None
+                                    with self._lock:
+                                        self.w = None
+                                    return
                                 with self._lock:
                                     self.w = w
                                 self.log("WinDivert переоткрыт")
