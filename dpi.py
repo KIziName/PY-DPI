@@ -28,7 +28,7 @@ from config import (
     CRLF, CRLFCRLF, HOST_HEADER, HOST_PORT_SEP, DOT_BYTE,
     IP_WHITELIST_V4, IP_WHITELIST_V6,
     MODES, MODES_SPLIT,
-    DEFAULT_DOMAINS, CONFIG, DpiConfig, UI, RT,
+    DEFAULT_DOMAINS, CONFIG, UI, RT,
 )
 
 try:
@@ -453,10 +453,7 @@ class DpiBypass:
                             continue
 
                         if self._shutting_down:
-                            try:
-                                w.send(p)
-                            except Exception:
-                                pass
+                            self._send_one(p)
                             return
                         try:
                             pkt_queue.put(p, timeout=RT.queue_put_timeout_s)
