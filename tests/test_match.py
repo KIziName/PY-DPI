@@ -1,7 +1,8 @@
 """Тесты распознавания доменов и детекта."""
 import unittest
+
 from config import CRLF
-from dpi import DpiBypass
+from bypass import DpiBypass
 from tests.test_tls import mk_client_hello
 
 
