@@ -1,7 +1,8 @@
 """Тесты хелперов: midsld, fake_sni, make_fake."""
 import unittest
+
 from config import FAKE_SNI_BASE
-from dpi import DpiBypass
+from bypass import DpiBypass
 
 
 class TestMidsld(unittest.TestCase):
