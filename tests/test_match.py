@@ -11,6 +11,7 @@ def mk_http(host=b"example.com"):
 
 
 class TestHostMatches(unittest.TestCase):
+    
     def setUp(self):
         self.bp = DpiBypass(["example.com", "x.com"], "split", lambda m: None)
 
@@ -34,6 +35,7 @@ class TestHostMatches(unittest.TestCase):
 
 
 class TestDetect(unittest.TestCase):
+    
     def setUp(self):
         self.bp = DpiBypass(["example.com"], "split", lambda m: None)
 
@@ -63,6 +65,7 @@ class TestDetect(unittest.TestCase):
         self.assertEqual(self.bp._detect_host(b"")[0], "none")
         
 class TestInit(unittest.TestCase):
+    
     def test_lowercase(self):
         bp = DpiBypass(["EXAMPLE.COM"], "split", lambda m: None)
         self.assertIn(b"example.com", bp.domains)
