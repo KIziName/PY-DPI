@@ -1,6 +1,7 @@
 """Тесты TLS-парсера."""
 import unittest
-from dpi import DpiBypass
+
+from bypass import DpiBypass
 
 
 def mk_client_hello(sni=b"example.com"):
