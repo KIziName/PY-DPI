@@ -1,6 +1,7 @@
 """Тесты IP-фильтра."""
 import unittest
-from dpi import _ip_is_local
+
+from bypass import _ip_is_local
 
 
 class TestIpIsLocal(unittest.TestCase):
