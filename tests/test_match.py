@@ -11,7 +11,6 @@ def mk_http(host=b"example.com"):
 
 
 class TestHostMatches(unittest.TestCase):
-
     def setUp(self):
         self.bp = DpiBypass(["example.com", "x.com"], "split", lambda m: None)
 
@@ -35,7 +34,6 @@ class TestHostMatches(unittest.TestCase):
 
 
 class TestDetect(unittest.TestCase):
-
     def setUp(self):
         self.bp = DpiBypass(["example.com"], "split", lambda m: None)
 
@@ -63,7 +61,32 @@ class TestDetect(unittest.TestCase):
 
     def test_empty(self):
         self.assertEqual(self.bp._detect_host(b"")[0], "none")
+        
+class TestInit(unittest.TestCase):
+    def test_lowercase(self):
+        bp = DpiBypass(["EXAMPLE.COM"], "split", lambda m: None)
+        self.assertIn(b"example.com", bp.domains)
 
+    def test_strip_trailing_dot(self):
+        bp = DpiBypass(["example.com."], "split", lambda m: None)
+        self.assertIn(b"example.com", bp.domains)
+
+    def test_strip_spaces(self):
+        bp = DpiBypass(["  example.com  "], "split", lambda m: None)
+        self.assertIn(b"example.com", bp.domains)
+
+    def test_idna(self):
+        bp = DpiBypass(["пример.рф"], "split", lambda m: None)
+        self.assertIn(b"xn--e1afmkfd.xn--p1ai", bp.domains)
+
+    def test_empty_skipped(self):
+        bp = DpiBypass(["", "  ", "example.com"], "split", lambda m: None)
+        self.assertEqual(bp.domains, {b"example.com"})
+
+    def test_duplicates_collapse(self):
+        bp = DpiBypass(["example.com", "EXAMPLE.COM", "example.com."],
+                       "split", lambda m: None)
+        self.assertEqual(len(bp.domains), 1)
 
 if __name__ == "__main__":
     unittest.main()
