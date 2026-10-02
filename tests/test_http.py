@@ -1,7 +1,8 @@
 """Тесты HTTP-парсера."""
 import unittest
+
 from config import CRLF
-from dpi import DpiBypass
+from bypass import DpiBypass
 
 
 def mk_http(host=b"example.com"):
