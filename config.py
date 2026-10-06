@@ -157,7 +157,7 @@ class DpiConfig:
             f"   and tcp.PayloadLength > 0) "
             f"  or (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0) "
             f") "
-            f"and not ({_IPV4_LOCAL_FILTER})"
+            f"and not (ip and ({_IPV4_LOCAL_FILTER}))"
     )
 
     @property
