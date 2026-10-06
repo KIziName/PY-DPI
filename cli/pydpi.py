@@ -1049,7 +1049,7 @@ class DpiBypass:
                         self._send_one(packet)
 
                 now = time.monotonic()
-                if now - last_report >= 5.0:
+                if now - last_report >= 10.0:
                     last_report = now
                     s = self.get_stats()
                     snapshot = (
