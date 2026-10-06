@@ -477,7 +477,8 @@ class DpiBypass:
             self._send_one(packet)
             return
 
-        if self._is_dst_local(packet):
+        
+        if packet.ipv6 is not None and self._is_dst_local(packet):
             self._send_one(packet)
             return
 
