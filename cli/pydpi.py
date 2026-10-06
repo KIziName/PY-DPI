@@ -1035,6 +1035,7 @@ class DpiBypass:
             recv_thread.start()
 
             last_report = time.monotonic()
+            last_stats = None
             while not self._stop_event.is_set():
                 try:
                     packet = pkt_queue.get(timeout=RT_QUEUE_GET_TIMEOUT_S)
@@ -1051,6 +1052,15 @@ class DpiBypass:
                 if now - last_report >= 5.0:
                     last_report = now
                     s = self.get_stats()
+                    snapshot = (
+                        s["bypassed"], s["bytes"], s["quic_dropped"],
+                        s["pending_pkts"], s["pending_conn"],
+                    )
+
+                    if snapshot == last_stats:
+                        continue
+
+                    last_stats = snapshot
                     bw = s["bw_bps"]
                     bw_s = (f"{bw/1024/1024:.2f} МБ/с" if bw >= 1024 * 1024
                             else f"{bw/1024:.1f} КБ/с" if bw >= 1024
