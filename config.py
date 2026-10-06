@@ -1,4 +1,3 @@
-import ipaddress
 from dataclasses import dataclass
 
 APP_TITLE = "PY-DPI"
@@ -57,18 +56,6 @@ IP_WHITELIST_V4 = (
     "172.16.0.0/12",
     "192.168.0.0/16",
     "224.0.0.0/4",
-)
-
-def _cidr_to_windivert_v4(cidr: str) -> str:
-    net = ipaddress.ip_network(cidr)
-    return (
-        f"(ip.DstAddr >= {net.network_address} "
-        f"and ip.DstAddr <= {net.broadcast_address})"
-    )
-
-
-_IPV4_LOCAL_FILTER = " or ".join(
-    _cidr_to_windivert_v4(c) for c in IP_WHITELIST_V4
 )
 
 IP_WHITELIST_V6 = (
@@ -152,12 +139,9 @@ class DpiConfig:
     @property
     def windivert_filter(self) -> str:
         return (
-            f"("
-            f"  ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"   and tcp.PayloadLength > 0) "
-            f"  or (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0) "
-            f") "
-            f"and not (ip and ({_IPV4_LOCAL_FILTER}))"
+            f"((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
+            f"and tcp.PayloadLength > 0) "
+            f"or (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0)"
     )
 
     @property
