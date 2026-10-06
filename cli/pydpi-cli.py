@@ -1,10 +1,3 @@
-""" Примеры:
-  python pydpi.py start --mode disorder
-  python pydpi.py start --mode fake+disorder --ttl 1 --repeats 2 --all
-  python pydpi.py test
-  python pydpi.py dns
-  python pydpi.py list-modes
-"""
 import argparse
 import copy
 import ctypes
