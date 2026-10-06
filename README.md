@@ -52,19 +52,19 @@
 ## Сli (запуск с консоли)
 - Примеры
   
-`python pydpi.py start`
-`python pydpi.py start --mode split`
-`python pydpi.py start --mode fake+disorder`
-`python pydpi.py start --mode disorder --split midsld`
-`python pydpi.py start --mode split --split random`
-`python pydpi.py start --mode fake+split`
-`python pydpi.py start --all`
-`python pydpi.py start --all --mode disorder`
-`python pydpi.py test`
-`python pydpi.py dns`
-`python pydpi.py --help`
-`python pydpi.py start --help`
-`python pydpi.py test --help`
+- `python pydpi.py start`
+- `python pydpi.py start --mode split`
+- `python pydpi.py start --mode fake+disorder`
+- `python pydpi.py start --mode disorder --split midsld`
+- `python pydpi.py start --mode split --split random`
+- `python pydpi.py start --mode fake+split`
+- `python pydpi.py start --all`
+- `python pydpi.py start --all --mode disorder`
+- `python pydpi.py test`
+- `python pydpi.py dns`
+- `python pydpi.py --help`
+- `python pydpi.py start --help`
+- `python pydpi.py test --help`
 
 (Полный список в папке cli в файле cmd.txt)
 
