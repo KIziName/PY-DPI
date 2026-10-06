@@ -49,9 +49,8 @@
  
  (исходники должны быть рядом)
 
-## Сli (запуск с консоли)
+## Сli (запуск с консоли) (для опытных)
 - Примеры
-  
 - `python pydpi.py start`
 - `python pydpi.py start --mode split`
 - `python pydpi.py start --mode fake+disorder`
