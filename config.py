@@ -152,10 +152,13 @@ class DpiConfig:
     @property
     def windivert_filter(self) -> str:
         return (
-            f"((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"and tcp.PayloadLength > 0) "
-            f"or (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0)"
-        )
+            f"("
+            f"  ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
+            f"   and tcp.PayloadLength > 0) "
+            f"  or (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0) "
+            f") "
+            f"and not ({_IPV4_LOCAL_FILTER})"
+    )
 
     @property
     def windivert_test_filter(self) -> str:
