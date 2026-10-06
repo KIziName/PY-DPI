@@ -1,43 +1,43 @@
 # Запуск со всеми настройками по умолчанию (disorder + встроенный список доменов)
-`python pydpi.py start`
+python pydpi.py start
 
 # То же, но самый простой режим
-`python pydpi.py start --mode split`
+python pydpi.py start --mode split
 
 # Режим с фейком (имитация «мёртвого» SNI)
-`python pydpi.py start --mode fake+disorder`
+python pydpi.py start --mode fake+disorder
 
 # Disorder + разрыв в середине домена второго уровня
-`python pydpi.py start --mode disorder --split midsld`
+python pydpi.py start --mode disorder --split midsld
 
 # Split + случайная точка разрыва
-`python pydpi.py start --mode split --split random`
+python pydpi.py start --mode split --split random
 
 # Fake + split
-`python pydpi.py start --mode fake+split`
+python pydpi.py start --mode fake+split
 
 # TTL фейка = 3 (по умолчанию 1)
-`python pydpi.py start --mode fake+disorder --ttl 3`
+python pydpi.py start --mode fake+disorder --ttl 3
 
 # Отправить фейк 4 раза (по умолчанию 2)
-`python pydpi.py start --mode fake+split --repeats 4`
+python pydpi.py start --mode fake+split --repeats 4
 
 # Обходить ВСЕ соединения, а не только домены из списка
-`python pydpi.py start --all`
+python pydpi.py start --all
 
 # То же, но с конкретным режимом
-`python pydpi.py start --all --mode disorder`
+python pydpi.py start --all --mode disorder
 
 # Проверить, что WinDivert открывается и пересылает пакеты (5 сек)
-`python pydpi.py test`
+python pydpi.py test
 
 # Проверить DNS на подмену (нужен интернет)
-`python pydpi.py dns`
+python pydpi.py dns
 
 # Посмотреть все режимы и параметры
-`python pydpi.py list-modes`
+python pydpi.py list-modes
 
 # Полная справка
-`python pydpi.py --help`
-`python pydpi.py start --help`
-`python pydpi.py test --help`
+python pydpi.py --help
+python pydpi.py start --help
+python pydpi.py test --help
