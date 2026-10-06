@@ -4,7 +4,6 @@ import ctypes
 import functools
 import heapq
 import ipaddress
-import os
 import queue
 import random
 import signal
@@ -15,7 +14,7 @@ import time
 import traceback
 
 from collections import deque
-from dataclasses import dataclass, replace, field
+from dataclasses import dataclass, replace
 
 try:
     import pydivert
