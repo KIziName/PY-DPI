@@ -13,7 +13,6 @@ import threading
 import time
 import traceback
 
-from collections import deque
 from dataclasses import dataclass, replace
 
 try:
@@ -211,7 +210,6 @@ class DpiBypass:
         self._pending_lock = threading.RLock()
 
         self.packets_bypassed = 0
-        self.packets_quic_dropped = 0
         self.bytes_bypassed = 0
 
         self._pq = []
