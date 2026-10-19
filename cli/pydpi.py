@@ -213,8 +213,6 @@ class DpiBypass:
         self.packets_bypassed = 0
         self.packets_quic_dropped = 0
         self.bytes_bypassed = 0
-        self._bw = deque()
-        self._bw_lock = threading.Lock()
 
         self._pq = []
         self._pq_seq = 0
@@ -224,32 +222,14 @@ class DpiBypass:
     # -------- stats --------
 
     def get_stats(self):
-        with self._pending_lock:
-            pending_pkts = sum(len(s.packets) for s in self._pending.values())
-            pending_conn = len(self._pending)
-        now = time.monotonic()
-        with self._bw_lock:
-            while self._bw and now - self._bw[0][0] > 5.0:
-                self._bw.popleft()
-            if self._bw:
-                span = now - self._bw[0][0]
-                bw_bps = sum(n for _, n in self._bw) / max(span, 0.001)
-            else:
-                bw_bps = 0.0
         return {
             "bypassed": self.packets_bypassed,
             "bytes": self.bytes_bypassed,
-            "bw_bps": bw_bps,
-            "quic_dropped": self.packets_quic_dropped,
-            "pending_pkts": pending_pkts,
-            "pending_conn": pending_conn,
         }
 
     def _mark_bypassed(self, nbytes):
         self.packets_bypassed += 1
         self.bytes_bypassed += nbytes
-        with self._bw_lock:
-            self._bw.append((time.monotonic(), nbytes))
 
     # -------- scheduler --------
 
@@ -388,7 +368,6 @@ class DpiBypass:
             if self.cfg.block_quic:
                 try:
                     if packet.udp.dst_port == PORT_HTTPS:
-                        self.packets_quic_dropped += 1
                         return
                 except Exception:
                     pass
@@ -1052,25 +1031,15 @@ class DpiBypass:
                 if now - last_report >= 3600.0:
                     last_report = now
                     s = self.get_stats()
-                    snapshot = (
-                        s["bypassed"], s["bytes"], s["quic_dropped"],
-                        s["pending_pkts"], s["pending_conn"],
-                    )
-
+                    snapshot = (s["bypassed"], s["bytes"])
+                    
                     if snapshot == last_stats:
                         continue
-
                     last_stats = snapshot
-                    bw = s["bw_bps"]
-                    bw_s = (f"{bw/1024/1024:.2f} МБ/с" if bw >= 1024 * 1024
-                            else f"{bw/1024:.1f} КБ/с" if bw >= 1024
-                            else f"{bw:.0f} Б/с")
-                    self.log(
-                        f"stats: пакетов={s['bypassed']:,} "
-                        f"байт={s['bytes']:,} ({bw_s}) "
-                        f"QUIC={s['quic_dropped']:,} "
-                        f"pending={s['pending_pkts']}/{s['pending_conn']}"
-                    )
+                    
+                    self.log(f"stats: пакетов={s['bypassed']:,} "
+                             f"байт={s['bytes']:,}")
+                    
         except Exception:
             self.log("КРИТИЧЕСКАЯ ОШИБКА:")
             for line in traceback.format_exc().splitlines():
@@ -1293,8 +1262,7 @@ def cmd_start(args):
     engine.stop()
     t.join(timeout=RT_WORKER_JOIN_TIMEOUT_S + RT_RECV_JOIN_TIMEOUT_S + 1.0)
     s = engine.get_stats()
-    print(f"Итог: пакетов={s['bypassed']:,}, байт={s['bytes']:,}, "
-          f"QUIC={s['quic_dropped']:,}")
+    print(f"Итог: пакетов={s['bypassed']:,}, байт={s['bytes']:,}")
     return 0
 
 
