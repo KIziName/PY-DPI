@@ -17,7 +17,7 @@ ADMIN_REQUIRED_MSG = (
 PORT_HTTP = 80
 PORT_HTTPS = 443
 
-FAKE_SNI_BASE = b"www.microsoft.com"
+FAKE_SNI_BASE = b"www.yandex.ru"
 HTTP_METHODS = (
     b"GET", b"POST", b"HEAD", b"PUT", b"DELETE",
     b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE", b"PRI",
