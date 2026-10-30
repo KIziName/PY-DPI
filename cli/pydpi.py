@@ -75,7 +75,7 @@ _WHITELIST_V6_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V6)
 @dataclass(frozen=True)
 class DpiConfig:
     disorder_delay_s: float = 0.005
-    fake_split_delay_s: float = 0.005
+    fake_split_delay_s: float = 0.003
     fake_ttl: int = 1
     fake_repeats: int = 2
     fake_badsum: bool = True
@@ -1285,7 +1285,7 @@ def build_parser():
                         help="не блокировать QUIC (UDP/443)")
         sp.add_argument("--disorder-delay", type=float, default=0.005,
                         help="задержка между пакетами disorder (сек)")
-        sp.add_argument("--fake-delay", type=float, default=0.005,
+        sp.add_argument("--fake-delay", type=float, default=0.003,
                         help="задержка между фейком и реальным пакетом (сек)")
 
     sp = sub.add_parser("start", help="запустить обход")
