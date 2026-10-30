@@ -379,7 +379,7 @@ class DpiBypass:
         if not packet.tcp:
             self._send_one(packet)
             return
-        if not packet.pay.load:
+        if not packet.payload:
             self._send_one(packet)
             return
             
