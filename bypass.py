@@ -500,6 +500,14 @@ class DpiBypass:
         if not packet.payload:
             self._send_one(packet)
             return
+            
+        try:
+            if packet.payload[0] not in _PAYLOAD_FIRST_BYTES:
+                self._send_one(packet)
+                return
+        except (IndexError, TypeError):
+            self._send_one(packet)
+            return
 
         payload = bytes(packet.payload)
         key = self._conn_key(packet)
