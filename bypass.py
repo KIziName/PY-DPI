@@ -279,7 +279,7 @@ class DpiBypass:
         except Exception:
             return copy.deepcopy(packet)
 
-    def _send_one(self, packet, recalculate=True):
+    def _send_one(self, packet, recalculate=False):
         with self._lock:
             w = self.w
         if w is None:
