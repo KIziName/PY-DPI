@@ -24,7 +24,7 @@ except ImportError:
 # ----------------------------- config -----------------------------
 
 APP_TITLE = "PY-DPI"
-APP_VERSION = "V1.2-CLI"
+APP_VERSION = "V1.3-CLI"
 
 PORT_HTTP = 80
 PORT_HTTPS = 443
