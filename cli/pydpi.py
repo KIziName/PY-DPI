@@ -43,6 +43,10 @@ TLS_RECORD_HEADER_LEN = 5
 TLS_EXT_HEADER_LEN = 4
 TLS_MIN_CLIENTHELLO_LEN = 43
 
+_PAYLOAD_FIRST_BYTES = frozenset(
+    (TLS_CONTENT_HANDSHAKE,) + tuple(m[0] for m in HTTP_METHODS)
+)
+
 SEQ_MASK = 0xFFFFFFFF
 SEQ_HALF = 0x7FFFFFFF
 CHECKSUM_MASK = 0xFFFF
@@ -375,7 +379,15 @@ class DpiBypass:
         if not packet.tcp:
             self._send_one(packet)
             return
-        if not packet.payload:
+        if not packet.pay.load:
+            self._send_one(packet)
+            return
+            
+        try:
+            if packet.payload[0] not in _PAYLOAD_FIRST_BYTES:
+                self._send_one(packet)
+                return
+        except (IndexError, TypeError):
             self._send_one(packet)
             return
 
