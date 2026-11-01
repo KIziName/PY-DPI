@@ -50,7 +50,7 @@
  (исходники должны быть рядом)
 
 ## СLI (для опытных)
-- Примеры
+- Примеры cmd команд
 - `python pydpi.py start`
 - `python pydpi.py start --mode split`
 - `python pydpi.py start --mode fake+disorder`
@@ -65,7 +65,7 @@
 - `python pydpi.py start --help`
 - `python pydpi.py test --help`
 
-(Полный список в папке cli в файле cmd.txt) (Лог в консоли обновляется каждый час) (CTRL + C останавливает обход в консоли)
+(Полный список в папке cli в файле cmd.txt) (Лог в консоли обновляется каждый час)
 
 ## Требования
 - ***Python 3.8+***
