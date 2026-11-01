@@ -108,7 +108,7 @@ class TestNoRealDomainInFake(unittest.TestCase):
     def test_yandex_ru_with_ru_tld(self):
         fake = DpiBypass._make_fake(
             b"www.yandex.ru", 0, b"www.yandex.ru", b"ru")
-        self.assertEqual(fake, b"aaaaaaaaa.ru")
+        self.assertEqual(fake, b"aaaaaaaaaa.ru")
         self.assertNotEqual(fake, b"www.yandex.ru")
 
     def test_fake_never_matches_real(self):
