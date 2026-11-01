@@ -12,8 +12,7 @@ from collections import deque
 from dataclasses import dataclass
 
 from config import (
-    PORT_HTTP, PORT_HTTPS, FAKE_SNI_BASE,
-    HTTP_METHODS, HTTP_HEADER_MAX_SCAN, _PAYLOAD_FIRST_BYTES,
+    PORT_HTTP, PORT_HTTPS, HTTP_METHODS, HTTP_HEADER_MAX_SCAN, _PAYLOAD_FIRST_BYTES,
     TLS_CONTENT_HANDSHAKE, TLS_HANDSHAKE_CLIENT_HELLO, TLS_SNI_EXT_TYPE,
     TLS_RECORD_HEADER_LEN, TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN,
     SEQ_MASK, SEQ_HALF, CHECKSUM_MASK, CHECKSUM_FLIP,
@@ -891,7 +890,8 @@ class DpiBypass:
                 self._send_pair(packet, first, second, seq, split_at, disorder)
                 return
 
-            fake_payload = self._make_fake(payload, host_off, hostname)
+            fake_payload = self._make_fake(payload, host_off, hostname,
+                                           self.cfg.fake_sni_tld)
             if fake_payload is None:
                 self._send_pair(packet, first, second, seq, split_at, disorder)
                 return
@@ -944,26 +944,18 @@ class DpiBypass:
                 self._send_with_checksum(fake)
 
     @staticmethod
-    def _fake_sni(n):
-        if n <= 0:
+    def _fake_sni(n, tld):
+        if n <= len(tld) + 1:
             return None
-        suffix = b".com"
-        if n == len(FAKE_SNI_BASE):
-            return FAKE_SNI_BASE
-        if n <= len(suffix):
-            return None
-        if n < len(FAKE_SNI_BASE):
-            return b"a" * (n - len(suffix)) + suffix
-        prefix = b"www."
-        return prefix + b"a" * (n - len(prefix) - len(suffix)) + suffix
+        return b"a" * (n - len(tld) - 1) + b"." + tld
 
     @staticmethod
-    def _make_fake(payload, host_off, hostname):
+    def _make_fake(payload, host_off, hostname, tld):
         n = len(hostname)
         if n == 0:
             return None
 
-        rep = DpiBypass._fake_sni(n)
+        rep = DpiBypass._fake_sni(n, tld)
         if rep is None or len(rep) != n:
             return None
 
