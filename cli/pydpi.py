@@ -29,7 +29,6 @@ APP_VERSION = "V1.3-CLI"
 PORT_HTTP = 80
 PORT_HTTPS = 443
 
-FAKE_SNI_BASE = b"www.yandex.ru"
 HTTP_METHODS = (
     b"GET", b"POST", b"HEAD", b"PUT", b"DELETE",
     b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE", b"PRI",
@@ -91,6 +90,7 @@ class DpiConfig:
     pending_flush_interval_s: float = 0.2
 
     block_quic: bool = True
+    fake_sni_tld: bytes = b"ru"   
 
     @property
     def windivert_filter(self) -> str:
@@ -740,7 +740,8 @@ class DpiBypass:
             if not use_fake:
                 self._send_pair(packet, first, second, seq, split_at, disorder)
                 return
-            fake_payload = self._make_fake(payload, host_off, hostname)
+            fake_payload = self._make_fake(payload, host_off, hostname,
+                               self.cfg.fake_sni_tld)
             if fake_payload is None:
                 self._send_pair(packet, first, second, seq, split_at, disorder)
                 return
@@ -789,25 +790,17 @@ class DpiBypass:
                 self._send_with_checksum(fake)
 
     @staticmethod
-    def _fake_sni(n):
-        if n <= 0:
+    def _fake_sni(n, tld):
+        if n <= len(tld) + 1:
             return None
-        suffix = b".com"
-        if n == len(FAKE_SNI_BASE):
-            return FAKE_SNI_BASE
-        if n <= len(suffix):
-            return None
-        if n < len(FAKE_SNI_BASE):
-            return b"a" * (n - len(suffix)) + suffix
-        prefix = b"www."
-        return prefix + b"a" * (n - len(prefix) - len(suffix)) + suffix
+        return b"a" * (n - len(tld) - 1) + b"." + tld
 
     @staticmethod
-    def _make_fake(payload, host_off, hostname):
+    def _make_fake(payload, host_off, hostname, tld):
         n = len(hostname)
         if n == 0:
             return None
-        rep = DpiBypass._fake_sni(n)
+        rep = DpiBypass._fake_sni(n, tld)
         if rep is None or len(rep) != n:
             return None
         fake = bytearray(payload)
