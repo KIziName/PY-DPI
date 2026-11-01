@@ -57,6 +57,25 @@ class TestHttpMethod(unittest.TestCase):
     def test_partial(self):
         self.assertTrue(DpiBypass._is_http_request_partial(b"G"))
         self.assertTrue(DpiBypass._is_http_request_partial(b"GET"))
+        
+class TestHttpHostEdge(unittest.TestCase):
+
+    def test_tab_whitespace(self):
+        req = (b"GET / HTTP/1.1" + CRLF
+               + b"Host:\ta.com\t" + CRLF + CRLF)
+        self.assertEqual(DpiBypass._http_host(req)[1], b"a.com")
+
+    def test_first_host_wins(self):
+        req = (b"GET / HTTP/1.1" + CRLF
+               + b"Host: a.com" + CRLF
+               + b"Host: b.com" + CRLF + CRLF)
+        self.assertEqual(DpiBypass._http_host(req)[1], b"a.com")
+
+    def test_host_is_not_first_header(self):
+        req = (b"GET / HTTP/1.1" + CRLF
+               + b"User-Agent: x" + CRLF
+               + b"Host: a.com" + CRLF + CRLF)
+        self.assertEqual(DpiBypass._http_host(req)[1], b"a.com")
 
 
 if __name__ == "__main__":
