@@ -1,26 +1,30 @@
 Примечание:
-1- Лог обновляется каждый час
-2- Для новичков лучше EXE
-3- Обход не идеален могут быть проблемы
-4- Остановить обход в консоли через CTRL+C 
+1- pydivert должен быть установлен: pip install pydivert
+2- Остановка обхода — CTRL+C
+3- Обход не идеален, могут быть проблемы с отдельными сайтами
+4- Для новичков лучше EXE-версия
 
-# Запуск со всеми настройками по умолчанию 
+# ──────────── Базовые режимы ────────────
+
+# Всё по умолчанию (disorder, midsld, встроенные домены)
 python pydpi.py start
 
-# То же, но самый простой режим
+# Самый простой режим
 python pydpi.py start --mode split
 
-# Режим с фейком (имитация «мёртвого» SNI)
-python pydpi.py start --mode fake+disorder
-
-# Disorder + разрыв в середине домена второго уровня
+# Disorder + разрыв в середине домена второго уровня (по умолчанию)
 python pydpi.py start --mode disorder --split midsld
 
 # Split + случайная точка разрыва
 python pydpi.py start --mode split --split random
 
-# Fake + split
+# Fake + split (рекомендуется, если disorder не пробивает)
 python pydpi.py start --mode fake+split
+
+# Fake + disorder (самый «злой»)
+python pydpi.py start --mode fake+disorder
+
+# ──────────── Параметры фейка ────────────
 
 # TTL фейка = 3 (по умолчанию 1)
 python pydpi.py start --mode fake+disorder --ttl 3
@@ -28,22 +32,51 @@ python pydpi.py start --mode fake+disorder --ttl 3
 # Отправить фейк 4 раза (по умолчанию 2)
 python pydpi.py start --mode fake+split --repeats 4
 
-# Обходить ВСЕ соединения, а не только домены из списка
-python pydpi.py start --all
+# ──────────── Домены ────────────
 
-# То же, но с конкретным режимом
+# Обходить ВСЁ,(осторожно)
 python pydpi.py start --all --mode disorder
 
-# Проверить, что WinDivert открывается и пересылает пакеты (5 сек)
+# Обход всего с fake+split
+python pydpi.py start --all --mode fake+split
+
+# ──────────── Диагностика ────────────
+
+# Проверить, что WinDivert открывается (5 сек)
 python pydpi.py test
+
 
 # Проверить DNS на подмену (нужен интернет)
 python pydpi.py dns
 
-# Посмотреть все режимы и параметры
+# ──────────── Справка ────────────
+
+# Посмотреть все режимы и примеры
 python pydpi.py list-modes
+
+# Версия
+python pydpi.py --version
 
 # Полная справка
 python pydpi.py --help
 python pydpi.py start --help
 python pydpi.py test --help
+python pydpi.py dns --help
+python pydpi.py list-modes --help
+
+# Рекомендуемая последовательность (если не пробивает) 
+
+# 1. Дефолт
+python pydpi.py start
+
+# 2. Если Discord/YouTube не открываются — fake+split
+python pydpi.py start --mode fake+split
+
+# 3. Если fake не проходит — disorder без фейка
+python pydpi.py start --mode disorder
+
+# 4. Если и disorder не пробивает — fake+disorder
+python pydpi.py start --mode fake+disorder --ttl 2 --repeats 3
+
+# 5. Если совсем ничего — обход всего
+python pydpi.py start --all --mode fake+disorder
