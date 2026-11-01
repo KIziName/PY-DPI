@@ -55,7 +55,22 @@ class TestTlsStart(unittest.TestCase):
 
     def test_too_short(self):
         self.assertFalse(DpiBypass._is_tls_clienthello_start(b"\x16"))
+        
+class TestTlsRecordIncomplete(unittest.TestCase):
 
+    def test_complete_record(self):
+        ch = mk_client_hello()
+        self.assertFalse(DpiBypass._tls_record_incomplete(ch))
+
+    def test_truncated_record(self):
+        ch = mk_client_hello()
+        self.assertTrue(DpiBypass._tls_record_incomplete(ch[:10]))
+
+    def test_not_tls(self):
+        self.assertFalse(DpiBypass._tls_record_incomplete(b"\x17\x03\x01\x00\x00"))
+
+    def test_short_header(self):
+        self.assertTrue(DpiBypass._tls_record_incomplete(b"\x16\x03"))
 
 if __name__ == "__main__":
     unittest.main()
