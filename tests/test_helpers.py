@@ -50,7 +50,6 @@ class TestFakeSni(unittest.TestCase):
         self.assertIsNone(DpiBypass._fake_sni(3, b"com"))
 
     def test_min_length_boundaries(self):
-        # минимум для "ru" — 4 ("a.ru"), для "com" — 5 ("a.com")
         self.assertEqual(DpiBypass._fake_sni(4, b"ru"), b"a.ru")
         self.assertIsNone(DpiBypass._fake_sni(3, b"ru"))
         self.assertEqual(DpiBypass._fake_sni(5, b"com"), b"a.com")
@@ -80,23 +79,54 @@ class TestMakeFake(unittest.TestCase):
         self.assertNotEqual(fake[3:14], host)
 
     def test_sni_is_a_com(self):
-        host = b"example.com"  # 11 байт
+        host = b"example.com"  
         payload = host
         fake = DpiBypass._make_fake(payload, 0, host, b"com")
         self.assertEqual(fake, b"aaaaaaa.com")
 
     def test_sni_is_a_ru(self):
-        host = b"example.com"  # 11 байт
+        host = b"example.com"  
         fake = DpiBypass._make_fake(host, 0, host, b"ru")
         self.assertEqual(fake, b"aaaaaaaa.ru")
 
     def test_too_short_returns_none(self):
-        host = b"t.me"  # 4 байта
+        host = b"t.me" 
         payload = host
         self.assertIsNone(DpiBypass._make_fake(payload, 0, host, b"com"))
-        # с "ru" — влезает: "a.ru"
         self.assertEqual(
             DpiBypass._make_fake(payload, 0, host, b"ru"), b"a.ru")
+        
+class TestNoRealDomainInFake(unittest.TestCase):
+    """Регрессия: реальные домены не должны попадать в фейк."""
+
+    def test_yandex_ru_not_used_as_fake(self):
+        fake = DpiBypass._make_fake(
+            b"www.yandex.ru", 0, b"www.yandex.ru", b"com")
+        self.assertNotEqual(fake, b"www.yandex.ru")
+        self.assertEqual(fake, b"aaaaaaaaa.com")
+
+    def test_yandex_ru_with_ru_tld(self):
+        fake = DpiBypass._make_fake(
+            b"www.yandex.ru", 0, b"www.yandex.ru", b"ru")
+        self.assertEqual(fake, b"aaaaaaaaa.ru")
+        self.assertNotEqual(fake, b"www.yandex.ru")
+
+    def test_fake_never_matches_real(self):
+        for host in (b"discord.com", b"www.youtube.com", b"x.com",
+                     b"github.com", b"api.telegram.org",
+                     b"www.yandex.ru"):
+            fake = DpiBypass._make_fake(host, 0, host, b"com")
+            if fake is not None:
+                self.assertNotEqual(fake, host, host)
+
+    def test_fake_starts_with_a(self):
+        for host in (b"discord.com", b"www.youtube.com",
+                     b"api.telegram.org", b"www.yandex.ru"):
+            fake = DpiBypass._make_fake(host, 0, host, b"com")
+            if fake is not None:
+                label, _, tld = fake.rpartition(b".")
+                self.assertEqual(tld, b"com")
+                self.assertEqual(label, b"a" * len(label), fake)
 
 
 if __name__ == "__main__":
