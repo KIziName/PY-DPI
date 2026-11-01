@@ -138,6 +138,7 @@ class DpiConfig:
     pending_flush_interval_s: float = 0.2
 
     block_quic: bool = True
+    fake_sni_tld: bytes = b"ru"   
 
     @property
     def windivert_filter(self) -> str:
