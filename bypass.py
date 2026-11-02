@@ -945,9 +945,14 @@ class DpiBypass:
 
     @staticmethod
     def _fake_sni(n, tld):
-        if n <= len(tld) + 1:
+        suffix = b"." + tld
+        label_len = n - len(suffix)
+        if label_len < 1:
             return None
-        return b"a" * (n - len(tld) - 1) + b"." + tld
+        label = bytes(
+            random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
+        )
+        return label + suffix
 
     @staticmethod
     def _make_fake(payload, host_off, hostname, tld):
