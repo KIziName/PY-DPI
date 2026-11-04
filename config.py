@@ -119,7 +119,7 @@ class RuntimeConfig:
     queue_put_timeout_s: float = 0.3
     drain_get_timeout_s: float = 0.05
     worker_min_wait_s: float = 0.001
-    ip_cache_size: int = 4096
+    ip_cache_size: int = 8192
 
 
 RT = RuntimeConfig()
