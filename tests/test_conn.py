@@ -64,7 +64,7 @@ class TestConnKey(unittest.TestCase):
             ("1.1.1.1", 1, "2.2.2.2", 2),
         )
 
-    def test_broken_attrs_return_none(self):
+    def test_broken_attrs_propagate(self):
         class BadIP:
             @property
             def src_addr(self):
@@ -75,4 +75,5 @@ class TestConnKey(unittest.TestCase):
                 raise RuntimeError("boom")
 
         p = _FakePacket(tcp=_FakeTCP(1, 2), ipv4=BadIP())
-        self.assertIsNone(DpiBypass._conn_key(p))
+        with self.assertRaises(RuntimeError):
+            DpiBypass._conn_key(p)
