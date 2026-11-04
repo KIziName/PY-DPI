@@ -46,7 +46,7 @@ CHECKSUM_MASK = 0xFFFF
 CHECKSUM_FLIP = 0x0001
 
 TTL_MIN = 1
-TTL_MAX = 12
+TTL_MAX = 6
 
 CRLF = b"\r\n"
 CRLFCRLF = b"\r\n\r\n"
@@ -130,8 +130,8 @@ RT = RuntimeConfig()
 class DpiConfig:
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.003
-    fake_ttl: int = 1
-    fake_repeats: int = 2
+    fake_ttl: int = 3
+    fake_repeats: int = 1
     fake_badsum: bool = True
     split_pos: str = "midsld"
 
