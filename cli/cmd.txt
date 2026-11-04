@@ -27,11 +27,11 @@ python pydpi.py start --mode fake+disorder
 
 # ──────────── Параметры фейка ────────────
 
-# TTL фейка = 3 (по умолчанию 1)
-python pydpi.py start --mode fake+disorder --ttl 3
+# TTL фейка = 1 (по умолчанию 3)
+python pydpi.py start --mode fake+disorder --ttl 1
 
-# Отправить фейк 4 раза (по умолчанию 2)
-python pydpi.py start --mode fake+split --repeats 4
+# Отправить фейк 2 раза (по умолчанию 1)
+python pydpi.py start --mode fake+split --repeats 2
 
 # ──────────── Домены ────────────
 
