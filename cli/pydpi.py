@@ -1260,9 +1260,9 @@ def build_parser():
     def add_common(sp):
         sp.add_argument("--mode", choices=MODES, default="disorder")
         sp.add_argument("--split", choices=MODES_SPLIT, default="midsld")
-        sp.add_argument("--ttl", type=int, default=1,
+        sp.add_argument("--ttl", type=int, default=3,
                         choices=range(TTL_MIN, TTL_MAX + 1))
-        sp.add_argument("--repeats", type=int, default=2, choices=range(1, 6))
+        sp.add_argument("--repeats", type=int, default=1, choices=range(1, 6))
         sp.add_argument("--no-badsum", action="store_true",
                         help="не портить контрольную сумму фейка")
 
