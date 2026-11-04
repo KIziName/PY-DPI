@@ -1,8 +1,10 @@
+import struct
+
 from dataclasses import dataclass
 
 APP_TITLE = "PY-DPI"
 APP_AUTHOR = "KiziName"
-APP_VERSION = "V1.3"
+APP_VERSION = "V1.4"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
 EXIT_NO_ADMIN = 1
@@ -21,7 +23,8 @@ HTTP_METHODS = (
     b"GET", b"POST", b"HEAD", b"PUT", b"DELETE",
     b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE", b"PRI",
 )
-HTTP_HEADER_MAX_SCAN = 4096
+_HTTP_METHOD_MAX_LEN = max(len(m) for m in HTTP_METHODS)
+HTTP_HEADER_MAX_SCAN = 8192
 
 TLS_CONTENT_HANDSHAKE = 0x16
 TLS_HANDSHAKE_CLIENT_HELLO = 0x01
@@ -29,6 +32,8 @@ TLS_SNI_EXT_TYPE = 0x0000
 TLS_RECORD_HEADER_LEN = 5
 TLS_EXT_HEADER_LEN = 4
 TLS_MIN_CLIENTHELLO_LEN = 43
+
+_U16 = struct.Struct(">H")
 
 _PAYLOAD_FIRST_BYTES = frozenset(
     (TLS_CONTENT_HANDSHAKE,) + tuple(m[0] for m in HTTP_METHODS)
@@ -74,7 +79,7 @@ MODES = ("split", "disorder", "fake+split", "fake+disorder")
 MODES_SPLIT = ("random", "midsld")
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class UiConfig:
     window_size: str = "900x720"
     window_min_size: tuple = (660, 500)
@@ -101,7 +106,7 @@ class UiConfig:
 UI = UiConfig()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class RuntimeConfig:
     shutdown_grace_s: float = 1.0
     stop_watchdog_ms: int = 5000
@@ -113,7 +118,6 @@ class RuntimeConfig:
     queue_get_timeout_s: float = 0.2
     queue_put_timeout_s: float = 0.3
     drain_get_timeout_s: float = 0.05
-    worker_max_wait_s: float = 0.1
     worker_min_wait_s: float = 0.001
     ip_cache_size: int = 4096
 
@@ -121,7 +125,7 @@ class RuntimeConfig:
 RT = RuntimeConfig()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DpiConfig:
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.003
@@ -138,15 +142,15 @@ class DpiConfig:
     pending_flush_interval_s: float = 0.2
 
     block_quic: bool = True
-    fake_sni_tld: bytes = b"com"   
+    fake_sni_tld: bytes = b"com"
 
     @property
     def windivert_filter(self) -> str:
         return (
             f"(tcp and ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"and tcp.PayloadLength > 80)) "
+            f"and tcp.PayloadLength > 50)) "
             f"or (udp and (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0))"
-    )
+        )
 
     @property
     def windivert_test_filter(self) -> str:
