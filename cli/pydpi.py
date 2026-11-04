@@ -8,6 +8,7 @@ import queue
 import random
 import signal
 import socket
+import struct
 import sys
 import threading
 import time
@@ -15,16 +16,22 @@ import traceback
 
 from dataclasses import dataclass, replace
 
+if sys.version_info < (3, 11):
+    print(
+        f"!! PY-DPI: рекомендуется Python 3.11+ "
+        f"(текущая {sys.version_info.major}.{sys.version_info.minor}). "
+        f"Продолжаю работу.",
+        file=sys.stderr,
+    )
+
 try:
     import pydivert
 except ImportError:
     pydivert = None
 
 
-# ----------------------------- config -----------------------------
-
 APP_TITLE = "PY-DPI"
-APP_VERSION = "V1.3-CLI"
+APP_VERSION = "V1.4-CLI"
 
 PORT_HTTP = 80
 PORT_HTTPS = 443
@@ -33,7 +40,8 @@ HTTP_METHODS = (
     b"GET", b"POST", b"HEAD", b"PUT", b"DELETE",
     b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE", b"PRI",
 )
-HTTP_HEADER_MAX_SCAN = 4096
+_HTTP_METHOD_MAX_LEN = max(len(m) for m in HTTP_METHODS)
+HTTP_HEADER_MAX_SCAN = 8192
 
 TLS_CONTENT_HANDSHAKE = 0x16
 TLS_HANDSHAKE_CLIENT_HELLO = 0x01
@@ -41,6 +49,8 @@ TLS_SNI_EXT_TYPE = 0x0000
 TLS_RECORD_HEADER_LEN = 5
 TLS_EXT_HEADER_LEN = 4
 TLS_MIN_CLIENTHELLO_LEN = 43
+
+_U16 = struct.Struct(">H")
 
 _PAYLOAD_FIRST_BYTES = frozenset(
     (TLS_CONTENT_HANDSHAKE,) + tuple(m[0] for m in HTTP_METHODS)
@@ -75,7 +85,7 @@ _WHITELIST_V4_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V4)
 _WHITELIST_V6_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V6)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class DpiConfig:
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.003
@@ -90,13 +100,13 @@ class DpiConfig:
     pending_flush_interval_s: float = 0.2
 
     block_quic: bool = True
-    fake_sni_tld: bytes = b"com"   
+    fake_sni_tld: bytes = b"com"
 
     @property
     def windivert_filter(self) -> str:
         return (
             f"(tcp and ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"and tcp.PayloadLength > 80)) "
+            f"and tcp.PayloadLength > 50)) "
             f"or (udp and (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0))"
         )
 
@@ -108,10 +118,9 @@ RT_RECV_JOIN_TIMEOUT_S = 1.0
 RT_QUEUE_GET_TIMEOUT_S = 0.2
 RT_QUEUE_PUT_TIMEOUT_S = 0.3
 RT_DRAIN_GET_TIMEOUT_S = 0.05
-RT_WORKER_MAX_WAIT_S = 0.1
-RT_WORKER_MIN_WAIT_S = 0.001
 RT_IP_CACHE_SIZE = 4096
 RT_TEST_DURATION_S = 5
+RT_WORKER_MIN_WAIT_S = 0.001
 
 DEFAULT_DOMAINS = (
     "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
@@ -147,8 +156,6 @@ DNS_CHECK_DOMAINS = (
 )
 
 
-# ----------------------------- utils -----------------------------
-
 def is_admin() -> bool:
     try:
         return ctypes.windll.shell32.IsUserAnAdmin() != 0
@@ -169,17 +176,13 @@ def _ip_is_local(s: str, is_v4: bool) -> bool:
     return False
 
 
-# ----------------------------- state -----------------------------
-
-@dataclass
+@dataclass(slots=True)
 class PendingState:
     buf: bytes
     ts: float
     packets: list
     first_seq: int
 
-
-# ----------------------------- engine -----------------------------
 
 class DpiBypass:
     def __init__(self, domains, mode, log_cb, done_cb=None, config=None,
@@ -203,12 +206,12 @@ class DpiBypass:
         self.bypass_all = bool(bypass_all)
 
         self._lock = threading.Lock()
-        self._send_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._shutting_down = False
         self._started = False
         self.running = False
         self.w = None
+        self._send_has_recalc = None
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -221,8 +224,6 @@ class DpiBypass:
         self._pq_cond = threading.Condition(threading.Lock())
         self._worker_thread = None
 
-    # -------- stats --------
-
     def get_stats(self):
         return {
             "bypassed": self.packets_bypassed,
@@ -232,8 +233,6 @@ class DpiBypass:
     def _mark_bypassed(self, nbytes):
         self.packets_bypassed += 1
         self.bytes_bypassed += nbytes
-
-    # -------- scheduler --------
 
     def _schedule(self, delay, func):
         with self._pq_cond:
@@ -257,7 +256,6 @@ class DpiBypass:
                 except Exception:
                     pass
 
-            now = time.monotonic()
             if now - last_flush >= self.cfg.pending_flush_interval_s:
                 last_flush = now
                 try:
@@ -268,10 +266,13 @@ class DpiBypass:
             with self._pq_cond:
                 if self._stop_event.is_set():
                     return
-                wait = RT_WORKER_MAX_WAIT_S
+                now2 = time.monotonic()
                 if self._pq:
-                    wait = min(wait, max(0.0,
-                                         self._pq[0][0] - time.monotonic()))
+                    wait = max(0.0, self._pq[0][0] - now2)
+                else:
+                    wait = self.cfg.pending_flush_interval_s
+                next_flush = last_flush + self.cfg.pending_flush_interval_s
+                wait = min(wait, max(0.0, next_flush - now2))
                 self._pq_cond.wait(max(wait, RT_WORKER_MIN_WAIT_S))
 
     def stop(self):
@@ -281,22 +282,24 @@ class DpiBypass:
         with self._pq_cond:
             self._pq_cond.notify_all()
 
-    # -------- send helpers --------
-
-    def _send_one(self, packet, recalculate=False):
+    def _send_one(self, packet):
         with self._lock:
+            has = self._send_has_recalc
             w = self.w
-        if w is None:
-            return
-        with self._send_lock:
+            if w is None:
+                return
             try:
-                w.send(packet, recalculate_checksum=recalculate)
-            except TypeError:
-                try:
+                if has is None:
+                    try:
+                        w.send(packet, recalculate_checksum=False)
+                        self._send_has_recalc = True
+                    except TypeError:
+                        self._send_has_recalc = False
+                        w.send(packet)
+                elif has:
+                    w.send(packet, recalculate_checksum=False)
+                else:
                     w.send(packet)
-                except Exception as e:
-                    if not (self._stop_event.is_set() or self._shutting_down):
-                        self.log(f"send: {e}")
             except Exception as e:
                 if not (self._stop_event.is_set() or self._shutting_down):
                     self.log(f"send: {e}")
@@ -306,7 +309,7 @@ class DpiBypass:
             packet.recalculate_checksums()
         except Exception:
             pass
-        self._send_one(packet, recalculate=False)
+        self._send_one(packet)
 
     def _send_badsum(self, packet):
         try:
@@ -321,7 +324,7 @@ class DpiBypass:
                     tcp.checksum = (cs ^ CHECKSUM_FLIP) & CHECKSUM_MASK
         except Exception:
             pass
-        self._send_one(packet, recalculate=False)
+        self._send_one(packet)
 
     @staticmethod
     def _clone_packet(packet):
@@ -342,10 +345,7 @@ class DpiBypass:
             ip = packet.ipv6
         else:
             return None
-        try:
-            return (ip.src_addr, tcp.src_port, ip.dst_addr, tcp.dst_port)
-        except Exception:
-            return None
+        return (ip.src_addr, tcp.src_port, ip.dst_addr, tcp.dst_port)
 
     @staticmethod
     def _is_dst_local(packet):
@@ -355,10 +355,27 @@ class DpiBypass:
             return _ip_is_local(packet.ipv6.dst_addr, False)
         return False
 
-    # -------- process --------
-
     def process(self, packet):
         if self._stop_event.is_set():
+            self._send_one(packet)
+            return
+
+        if packet.tcp is None:
+            if packet.udp is not None and self.cfg.block_quic:
+                if not self._is_dst_local(packet):
+                    try:
+                        if packet.udp.dst_port == PORT_HTTPS:
+                            return
+                    except Exception:
+                        pass
+            self._send_one(packet)
+            return
+
+        payload = packet.payload
+        if not payload:
+            self._send_one(packet)
+            return
+        if payload[0] not in _PAYLOAD_FIRST_BYTES:
             self._send_one(packet)
             return
 
@@ -366,32 +383,6 @@ class DpiBypass:
             self._send_one(packet)
             return
 
-        if packet.udp is not None:
-            if self.cfg.block_quic:
-                try:
-                    if packet.udp.dst_port == PORT_HTTPS:
-                        return
-                except Exception:
-                    pass
-            self._send_one(packet)
-            return
-
-        if not packet.tcp:
-            self._send_one(packet)
-            return
-        if not packet.payload:
-            self._send_one(packet)
-            return
-            
-        try:
-            if packet.payload[0] not in _PAYLOAD_FIRST_BYTES:
-                self._send_one(packet)
-                return
-        except (IndexError, TypeError):
-            self._send_one(packet)
-            return
-
-        payload = bytes(packet.payload)
         key = self._conn_key(packet)
 
         if key is not None:
@@ -474,23 +465,20 @@ class DpiBypass:
 
         if action is None:
             return
-        kind = action[0]
-        if kind == "send":
-            self._send_one(action[1])
-        elif kind == "fresh":
-            self._dispatch_fresh(action[1], action[2], action[3])
-        elif kind == "flush_fresh":
-            _, st, k, pk, pl = action
-            self._flush_as_is(st)
-            self._dispatch_fresh(k, pk, pl)
-        elif kind == "flush_send":
-            _, st, pk = action
-            self._flush_as_is(st)
-            self._send_one(pk)
-        elif kind == "fragment":
-            _, base, combined, host_off, hostname = action
-            self._mark_bypassed(len(combined))
-            self._fragment_and_send(base, combined, host_off, hostname)
+        match action:
+            case ("send", p):
+                self._send_one(p)
+            case ("fresh", k, p, pl):
+                self._dispatch_fresh(k, p, pl)
+            case ("flush_fresh", st, k, pk, pl):
+                self._flush_as_is(st)
+                self._dispatch_fresh(k, pk, pl)
+            case ("flush_send", st, pk):
+                self._flush_as_is(st)
+                self._send_one(pk)
+            case ("fragment", base, combined, host_off, hostname):
+                self._mark_bypassed(len(combined))
+                self._fragment_and_send(base, combined, host_off, hostname)
 
     def _flush_expired(self):
         if self._stop_event.is_set():
@@ -509,8 +497,6 @@ class DpiBypass:
         for p in state.packets:
             self._send_one(p)
 
-    # -------- parsing --------
-
     @staticmethod
     def _is_tls_clienthello_start(payload):
         if len(payload) < TLS_RECORD_HEADER_LEN + 1:
@@ -527,7 +513,7 @@ class DpiBypass:
             return True
         if payload[0] != TLS_CONTENT_HANDSHAKE:
             return False
-        record_len = int.from_bytes(payload[3:5], "big")
+        record_len = _U16.unpack_from(payload, 3)[0]
         return len(payload) < TLS_RECORD_HEADER_LEN + record_len
 
     @staticmethod
@@ -545,11 +531,10 @@ class DpiBypass:
     def _is_http_request_partial(payload):
         if not payload:
             return False
-        n = len(payload)
+        if len(payload) > _HTTP_METHOD_MAX_LEN:
+            return False
         for m in HTTP_METHODS:
-            if n < len(m) and m.startswith(payload):
-                return True
-            if n == len(m) and m == payload:
+            if m.startswith(payload):
                 return True
         return False
 
@@ -560,7 +545,9 @@ class DpiBypass:
         first_line_end = payload.find(CRLF)
         if first_line_end < 0:
             return None
-        hdr_end = payload.find(CRLFCRLF, first_line_end)
+
+        hdr_end = payload.find(CRLFCRLF, first_line_end,
+                               first_line_end + HTTP_HEADER_MAX_SCAN)
         if hdr_end < 0:
             max_scan = min(len(payload), HTTP_HEADER_MAX_SCAN)
         else:
@@ -592,7 +579,7 @@ class DpiBypass:
                         host_bytes = host_bytes[:sep]
                 if not host_bytes:
                     return None
-                return (value_start, bytes(host_bytes))
+                return (value_start, host_bytes)
             pos = line_end + 2
         return None
 
@@ -615,19 +602,23 @@ class DpiBypass:
             host = self._http_host(payload)
             if host is not None:
                 return ("match", host)
-            if CRLFCRLF not in payload[:HTTP_HEADER_MAX_SCAN]:
+            if payload.find(CRLFCRLF, 0, HTTP_HEADER_MAX_SCAN) < 0:
                 return ("incomplete", None)
             return ("none", None)
         return ("none", None)
 
     def _host_matches(self, host):
-        h = host.lower().rstrip(b".")
-        if h in self.domains:
+        domains = self.domains
+        if host in domains:
             return True
-        parts = h.split(b".")
-        for i in range(1, len(parts)):
-            if b".".join(parts[i:]) in self.domains:
+        h = host.rstrip(b".").lower()
+        if h in domains:
+            return True
+        idx = h.find(b".")
+        while idx >= 0:
+            if h[idx + 1:] in domains:
                 return True
+            idx = h.find(b".", idx + 1)
         return False
 
     @staticmethod
@@ -638,7 +629,7 @@ class DpiBypass:
             return None
         if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
             return None
-        record_len = int.from_bytes(payload[3:5], "big")
+        record_len = _U16.unpack_from(payload, 3)[0]
         record_end = TLS_RECORD_HEADER_LEN + record_len
         if record_end > len(payload):
             return None
@@ -654,7 +645,7 @@ class DpiBypass:
         pos += 1 + sid_len
         if pos + 2 > record_end:
             return None
-        cs_len = int.from_bytes(payload[pos:pos + 2], "big")
+        cs_len = _U16.unpack_from(payload, pos)[0]
         pos += 2 + cs_len
         if pos + 1 > record_end:
             return None
@@ -662,14 +653,14 @@ class DpiBypass:
         pos += 1 + cm_len
         if pos + 2 > record_end:
             return None
-        ext_total_len = int.from_bytes(payload[pos:pos + 2], "big")
+        ext_total_len = _U16.unpack_from(payload, pos)[0]
         pos += 2
         ext_end = pos + ext_total_len
         if ext_end > record_end:
             return None
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
-            ext_type = int.from_bytes(payload[pos:pos + 2], "big")
-            ext_len = int.from_bytes(payload[pos + 2:pos + 4], "big")
+            ext_type = _U16.unpack_from(payload, pos)[0]
+            ext_len = _U16.unpack_from(payload, pos + 2)[0]
             if pos + TLS_EXT_HEADER_LEN + ext_len > ext_end:
                 return None
             pos += TLS_EXT_HEADER_LEN
@@ -677,7 +668,7 @@ class DpiBypass:
                 if pos + 5 > ext_end:
                     return None
                 name_type = payload[pos + 2]
-                name_len = int.from_bytes(payload[pos + 3:pos + 5], "big")
+                name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
                 if name_type != 0:
                     pos += ext_len
@@ -687,8 +678,6 @@ class DpiBypass:
                 return (host_off, payload[host_off:host_off + name_len])
             pos += ext_len
         return None
-
-    # -------- split / fragment --------
 
     @staticmethod
     def _midsld_offset(hostname):
@@ -760,19 +749,12 @@ class DpiBypass:
                 pass
 
     def _send_whole(self, packet, payload):
-        try:
-            same = bytes(packet.payload) == payload
-        except Exception:
-            same = False
-        if same:
+        if packet.payload == payload:
             self._send_with_checksum(packet)
             return
         p = self._clone_packet(packet)
         p.payload = payload
-        try:
-            p.tcp.psh = True
-        except Exception:
-            pass
+        p.tcp.psh = True
         self._send_with_checksum(p)
 
     def _send_fakes(self, packet, fake_payload):
@@ -841,8 +823,6 @@ class DpiBypass:
             p2.tcp.psh = True
             self._send_with_checksum(p2)
 
-    # -------- lifecycle --------
-
     def _shutdown(self, w, pkt_queue, recv_thread):
         with self._lock:
             self._shutting_down = True
@@ -881,7 +861,7 @@ class DpiBypass:
         if w_now is not None:
             for state in pending_states:
                 for p in state.packets:
-                    with self._send_lock:
+                    with self._lock:
                         try:
                             w_now.send(p)
                         except Exception:
@@ -897,7 +877,7 @@ class DpiBypass:
                     p = pkt_queue.get(timeout=RT_DRAIN_GET_TIMEOUT_S)
                 except queue.Empty:
                     continue
-                with self._send_lock:
+                with self._lock:
                     try:
                         w_now.send(p)
                     except Exception:
@@ -907,7 +887,7 @@ class DpiBypass:
                     p = pkt_queue.get_nowait()
                 except queue.Empty:
                     break
-                with self._send_lock:
+                with self._lock:
                     try:
                         w_now.send(p)
                     except Exception:
@@ -996,13 +976,12 @@ class DpiBypass:
                         if self._stop_event.is_set() or self._shutting_down:
                             return
                         self.log(f"recv: {e} — перезапуск")
-                        with self._send_lock:
+                        with self._lock:
                             try:
                                 w.close()
                             except Exception:
                                 pass
-                        w = None
-                        with self._lock:
+                            w = None
                             self.w = None
                         if self._stop_event.wait(2.0):
                             return
@@ -1040,14 +1019,14 @@ class DpiBypass:
                     last_report = now
                     s = self.get_stats()
                     snapshot = (s["bypassed"], s["bytes"])
-                    
+
                     if snapshot == last_stats:
                         continue
                     last_stats = snapshot
-                    
+
                     self.log(f"stats: пакетов={s['bypassed']:,} "
                              f"байт={s['bytes']:,}")
-                    
+
         except Exception:
             self.log("КРИТИЧЕСКАЯ ОШИБКА:")
             for line in traceback.format_exc().splitlines():
@@ -1055,8 +1034,6 @@ class DpiBypass:
         finally:
             self._shutdown(w, pkt_queue, recv_thread)
 
-
-# ----------------------------- CLI -----------------------------
 
 def load_domains(args):
     domains = set() if args.no_defaults else set(DEFAULT_DOMAINS)
@@ -1081,9 +1058,6 @@ def build_config(args):
         fake_repeats=args.repeats,
         fake_badsum=not args.no_badsum,
         split_pos=args.split,
-        block_quic=not args.no_block_quic,
-        disorder_delay_s=args.disorder_delay,
-        fake_split_delay_s=args.fake_delay,
     )
 
 
@@ -1255,8 +1229,7 @@ def cmd_start(args):
         log("⚠ РЕЖИМ: обход всего включён — может ломать "
             "отдельные сайты и замедлять трафик")
     log(f"Split: {cfg.split_pos}, TTL={cfg.fake_ttl}, "
-        f"repeats={cfg.fake_repeats}, badsum={cfg.fake_badsum}, "
-        f"block_quic={cfg.block_quic}")
+        f"repeats={cfg.fake_repeats}, badsum={cfg.fake_badsum}")
 
     t = threading.Thread(target=engine.run, daemon=True, name="pydpi-main")
     t.start()
@@ -1291,12 +1264,6 @@ def build_parser():
         sp.add_argument("--repeats", type=int, default=2, choices=range(1, 6))
         sp.add_argument("--no-badsum", action="store_true",
                         help="не портить контрольную сумму фейка")
-        sp.add_argument("--no-block-quic", action="store_true",
-                        help="не блокировать QUIC (UDP/443)")
-        sp.add_argument("--disorder-delay", type=float, default=0.005,
-                        help="задержка между пакетами disorder (сек)")
-        sp.add_argument("--fake-delay", type=float, default=0.003,
-                        help="задержка между фейком и реальным пакетом (сек)")
 
     sp = sub.add_parser("start", help="запустить обход")
     add_common(sp)
