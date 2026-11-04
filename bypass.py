@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from config import (
     PORT_HTTP, PORT_HTTPS, HTTP_METHODS, HTTP_HEADER_MAX_SCAN, _PAYLOAD_FIRST_BYTES,
+    _HTTP_METHOD_MAX_LEN, _U16,
     TLS_CONTENT_HANDSHAKE, TLS_HANDSHAKE_CLIENT_HELLO, TLS_SNI_EXT_TYPE,
     TLS_RECORD_HEADER_LEN, TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN,
     SEQ_MASK, SEQ_HALF, CHECKSUM_MASK, CHECKSUM_FLIP,
@@ -49,7 +50,7 @@ def _ip_is_local(s: str, is_v4: bool) -> bool:
     return False
 
 
-@dataclass
+@dataclass(slots=True)
 class PendingState:
     buf: bytes
     ts: float
@@ -78,12 +79,12 @@ class DpiBypass:
         self.cfg = config
         self.bypass_all = bool(bypass_all)
         self._lock = threading.Lock()
-        self._send_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._shutting_down = False
         self._started = False
         self.running = False
         self.w = None
+        self._send_has_recalc = None
         self._pending = {}
         self._pending_lock = threading.RLock()
         self.packets_bypassed = 0
@@ -149,7 +150,6 @@ class DpiBypass:
                 except Exception:
                     pass
 
-            now = time.monotonic()
             if now - last_flush >= self.cfg.pending_flush_interval_s:
                 last_flush = now
                 try:
@@ -160,9 +160,13 @@ class DpiBypass:
             with self._pq_cond:
                 if self._stop_event.is_set():
                     return
-                wait = RT.worker_max_wait_s
+                now2 = time.monotonic()
                 if self._pq:
-                    wait = min(wait, max(0.0, self._pq[0][0] - time.monotonic()))
+                    wait = max(0.0, self._pq[0][0] - now2)
+                else:
+                    wait = self.cfg.pending_flush_interval_s
+                next_flush = last_flush + self.cfg.pending_flush_interval_s
+                wait = min(wait, max(0.0, next_flush - now2))
                 self._pq_cond.wait(max(wait, RT.worker_min_wait_s))
 
     def stop(self):
@@ -210,7 +214,7 @@ class DpiBypass:
         if w_now is not None:
             for state in pending_states:
                 for p in state.packets:
-                    with self._send_lock:
+                    with self._lock:
                         try:
                             w_now.send(p)
                         except Exception:
@@ -227,7 +231,7 @@ class DpiBypass:
                     p = pkt_queue.get(timeout=RT.drain_get_timeout_s)
                 except queue.Empty:
                     continue
-                with self._send_lock:
+                with self._lock:
                     try:
                         w_now.send(p)
                     except Exception:
@@ -237,7 +241,7 @@ class DpiBypass:
                     p = pkt_queue.get_nowait()
                 except queue.Empty:
                     break
-                with self._send_lock:
+                with self._lock:
                     try:
                         w_now.send(p)
                     except Exception:
@@ -278,20 +282,24 @@ class DpiBypass:
         except Exception:
             return copy.deepcopy(packet)
 
-    def _send_one(self, packet, recalculate=False):
+    def _send_one(self, packet):
         with self._lock:
+            has = self._send_has_recalc
             w = self.w
-        if w is None:
-            return
-        with self._send_lock:
+            if w is None:
+                return
             try:
-                w.send(packet, recalculate_checksum=recalculate)
-            except TypeError:
-                try:
+                if has is None:
+                    try:
+                        w.send(packet, recalculate_checksum=False)
+                        self._send_has_recalc = True
+                    except TypeError:
+                        self._send_has_recalc = False
+                        w.send(packet)
+                elif has:
+                    w.send(packet, recalculate_checksum=False)
+                else:
                     w.send(packet)
-                except Exception as e:
-                    if not (self._stop_event.is_set() or self._shutting_down):
-                        self.log(f"send: {e}")
             except Exception as e:
                 if not (self._stop_event.is_set() or self._shutting_down):
                     self.log(f"send: {e}")
@@ -301,7 +309,7 @@ class DpiBypass:
             packet.recalculate_checksums()
         except Exception:
             pass
-        self._send_one(packet, recalculate=False)
+        self._send_one(packet)
 
     def _send_badsum(self, packet):
         try:
@@ -316,7 +324,7 @@ class DpiBypass:
                     tcp.checksum = (cs ^ CHECKSUM_FLIP) & CHECKSUM_MASK
         except Exception:
             pass
-        self._send_one(packet, recalculate=False)
+        self._send_one(packet)
 
     def _notify_done(self):
         if self.done_cb is None:
@@ -337,10 +345,7 @@ class DpiBypass:
             ip = packet.ipv6
         else:
             return None
-        try:
-            return (ip.src_addr, tcp.src_port, ip.dst_addr, tcp.dst_port)
-        except Exception:
-            return None
+        return (ip.src_addr, tcp.src_port, ip.dst_addr, tcp.dst_port)
 
     @staticmethod
     def _is_dst_local(packet) -> bool:
@@ -426,13 +431,12 @@ class DpiBypass:
                                     or self._shutting_down):
                                 return
                             self.log(f"recv: {e} — перезапуск WinDivert")
-                            with self._send_lock:
+                            with self._lock:
                                 try:
                                     w.close()
                                 except Exception:
                                     pass
-                            w = None
-                            with self._lock:
+                                w = None
                                 self.w = None
                             if self._stop_event.wait(2.0):
                                 return
@@ -476,39 +480,30 @@ class DpiBypass:
             self._send_one(packet)
             return
 
-        
+        if packet.tcp is None:
+            if packet.udp is not None and self.cfg.block_quic:
+                if not self._is_dst_local(packet):
+                    try:
+                        if packet.udp.dst_port == PORT_HTTPS:
+                            self.packets_quic_dropped += 1
+                            return
+                    except Exception:
+                        pass
+            self._send_one(packet)
+            return
+
+        payload = packet.payload
+        if not payload:
+            self._send_one(packet)
+            return
+        if payload[0] not in _PAYLOAD_FIRST_BYTES:
+            self._send_one(packet)
+            return
+
         if self._is_dst_local(packet):
             self._send_one(packet)
             return
 
-        if packet.udp is not None:
-            if self.cfg.block_quic:
-                try:
-                    if packet.udp.dst_port == PORT_HTTPS:
-                        self.packets_quic_dropped += 1
-                        return
-                except Exception:
-                    pass
-            self._send_one(packet)
-            return
-
-        if not packet.tcp:
-            self._send_one(packet)
-            return
-
-        if not packet.payload:
-            self._send_one(packet)
-            return
-            
-        try:
-            if packet.payload[0] not in _PAYLOAD_FIRST_BYTES:
-                self._send_one(packet)
-                return
-        except (IndexError, TypeError):
-            self._send_one(packet)
-            return
-
-        payload = bytes(packet.payload)
         key = self._conn_key(packet)
 
         if key is not None:
@@ -597,23 +592,20 @@ class DpiBypass:
         if action is None:
             return
 
-        kind = action[0]
-        if kind == "send":
-            self._send_one(action[1])
-        elif kind == "fresh":
-            self._dispatch_fresh(action[1], action[2], action[3])
-        elif kind == "flush_fresh":
-            _, st, k, pk, pl = action
-            self._flush_as_is(st)
-            self._dispatch_fresh(k, pk, pl)
-        elif kind == "flush_send":
-            _, st, pk = action
-            self._flush_as_is(st)
-            self._send_one(pk)
-        elif kind == "fragment":
-            _, base, combined, host_off, hostname = action
-            self._mark_bypassed(len(combined))
-            self._fragment_and_send(base, combined, host_off, hostname)
+        match action:
+            case ("send", p):
+                self._send_one(p)
+            case ("fresh", k, p, pl):
+                self._dispatch_fresh(k, p, pl)
+            case ("flush_fresh", st, k, pk, pl):
+                self._flush_as_is(st)
+                self._dispatch_fresh(k, pk, pl)
+            case ("flush_send", st, pk):
+                self._flush_as_is(st)
+                self._send_one(pk)
+            case ("fragment", base, combined, host_off, hostname):
+                self._mark_bypassed(len(combined))
+                self._fragment_and_send(base, combined, host_off, hostname)
 
     def _flush_expired(self):
         if self._stop_event.is_set():
@@ -648,7 +640,7 @@ class DpiBypass:
             return True
         if payload[0] != TLS_CONTENT_HANDSHAKE:
             return False
-        record_len = int.from_bytes(payload[3:5], "big")
+        record_len = _U16.unpack_from(payload, 3)[0]
         return len(payload) < TLS_RECORD_HEADER_LEN + record_len
 
     @staticmethod
@@ -666,11 +658,10 @@ class DpiBypass:
     def _is_http_request_partial(payload):
         if not payload:
             return False
-        n = len(payload)
+        if len(payload) > _HTTP_METHOD_MAX_LEN:
+            return False
         for m in HTTP_METHODS:
-            if n < len(m) and m.startswith(payload):
-                return True
-            if n == len(m) and m == payload:
+            if m.startswith(payload):
                 return True
         return False
 
@@ -683,7 +674,8 @@ class DpiBypass:
         if first_line_end < 0:
             return None
 
-        hdr_end = payload.find(CRLFCRLF, first_line_end)
+        hdr_end = payload.find(CRLFCRLF, first_line_end,
+                               first_line_end + HTTP_HEADER_MAX_SCAN)
         if hdr_end < 0:
             max_scan = min(len(payload), HTTP_HEADER_MAX_SCAN)
         else:
@@ -723,7 +715,7 @@ class DpiBypass:
 
                 if not host_bytes:
                     return None
-                return (value_start, bytes(host_bytes))
+                return (value_start, host_bytes)
 
             pos = line_end + 2
 
@@ -752,20 +744,24 @@ class DpiBypass:
             host = self._http_host(payload)
             if host is not None:
                 return ("match", host)
-            if CRLFCRLF not in payload[:HTTP_HEADER_MAX_SCAN]:
+            if payload.find(CRLFCRLF, 0, HTTP_HEADER_MAX_SCAN) < 0:
                 return ("incomplete", None)
             return ("none", None)
 
         return ("none", None)
 
     def _host_matches(self, host):
-        h = host.lower().rstrip(b".")
-        if h in self.domains:
+        domains = self.domains
+        if host in domains:
             return True
-        parts = h.split(b".")
-        for i in range(1, len(parts)):
-            if b".".join(parts[i:]) in self.domains:
+        h = host.rstrip(b".").lower()
+        if h in domains:
+            return True
+        idx = h.find(b".")
+        while idx >= 0:
+            if h[idx + 1:] in domains:
                 return True
+            idx = h.find(b".", idx + 1)
         return False
 
     @staticmethod
@@ -777,7 +773,7 @@ class DpiBypass:
         if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
             return None
 
-        record_len = int.from_bytes(payload[3:5], "big")
+        record_len = _U16.unpack_from(payload, 3)[0]
         record_end = TLS_RECORD_HEADER_LEN + record_len
         if record_end > len(payload):
             return None
@@ -796,7 +792,7 @@ class DpiBypass:
 
         if pos + 2 > record_end:
             return None
-        cs_len = int.from_bytes(payload[pos:pos + 2], "big")
+        cs_len = _U16.unpack_from(payload, pos)[0]
         pos += 2 + cs_len
 
         if pos + 1 > record_end:
@@ -806,7 +802,7 @@ class DpiBypass:
 
         if pos + 2 > record_end:
             return None
-        ext_total_len = int.from_bytes(payload[pos:pos + 2], "big")
+        ext_total_len = _U16.unpack_from(payload, pos)[0]
         pos += 2
 
         ext_end = pos + ext_total_len
@@ -814,8 +810,8 @@ class DpiBypass:
             return None
 
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
-            ext_type = int.from_bytes(payload[pos:pos + 2], "big")
-            ext_len = int.from_bytes(payload[pos + 2:pos + 4], "big")
+            ext_type = _U16.unpack_from(payload, pos)[0]
+            ext_len = _U16.unpack_from(payload, pos + 2)[0]
             if pos + TLS_EXT_HEADER_LEN + ext_len > ext_end:
                 return None
             pos += TLS_EXT_HEADER_LEN
@@ -823,7 +819,7 @@ class DpiBypass:
                 if pos + 5 > ext_end:
                     return None
                 name_type = payload[pos + 2]
-                name_len = int.from_bytes(payload[pos + 3:pos + 5], "big")
+                name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
                 if name_type != 0:
                     pos += ext_len
@@ -912,21 +908,13 @@ class DpiBypass:
                 pass
 
     def _send_whole(self, packet, payload):
-        try:
-            same = bytes(packet.payload) == payload
-        except Exception:
-            same = False
-
-        if same:
+        if packet.payload == payload:
             self._send_with_checksum(packet)
             return
 
         p = self._clone_packet(packet)
         p.payload = payload
-        try:
-            p.tcp.psh = True
-        except Exception:
-            pass
+        p.tcp.psh = True
         self._send_with_checksum(p)
 
     def _send_fakes(self, packet, fake_payload):
