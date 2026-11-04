@@ -67,7 +67,7 @@ HOST_HEADER = b"host:"
 HOST_PORT_SEP = b":"
 DOT_BYTE = 0x2E
 
-TTL_MIN, TTL_MAX = 1, 12
+TTL_MIN, TTL_MAX = 1, 6
 
 MODES = ("split", "disorder", "fake+split", "fake+disorder")
 MODES_SPLIT = ("random", "midsld")
@@ -90,8 +90,8 @@ _WHITELIST_V6_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V6)
 class DpiConfig:
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.003
-    fake_ttl: int = 1
-    fake_repeats: int = 2
+    fake_ttl: int = 3
+    fake_repeats: int = 1
     fake_badsum: bool = True
     split_pos: str = "midsld"
 
