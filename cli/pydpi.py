@@ -897,12 +897,17 @@ class DpiBypass:
         with self._lock:
             self.running = False
 
-        for sock in (w, w_now):
-            if sock is not None:
-                try:
-                    sock.close()
-                except Exception:
-                    pass
+        if w is not None:
+            try:
+                w.close()
+            except Exception:
+                pass
+
+        if w_now is not None and w_now is not w:
+            try:
+                w_now.close()
+            except Exception:
+                pass
 
         if (recv_thread is not None and recv_thread.is_alive()
                 and recv_thread is not threading.current_thread()):
