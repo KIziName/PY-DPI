@@ -25,6 +25,10 @@ class TestIpIsLocal(unittest.TestCase):
     def test_cache_same_result(self):
         self.assertEqual(_ip_is_local("8.8.8.8", True),
                          _ip_is_local("8.8.8.8", True))
+        
+    def test_broadcast_is_local(self):
+        self.assertTrue(_ip_is_local("255.255.255.255", True))
+        self.assertTrue(_ip_is_local("240.0.0.1", True))
 
 
 if __name__ == "__main__":
