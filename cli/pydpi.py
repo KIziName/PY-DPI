@@ -1070,7 +1070,7 @@ def cmd_list_modes(_args):
     print()
     print("Примеры:")
     print("  pydpi.py start --mode disorder")
-    print("  pydpi.py start --mode fake+disorder --ttl 1 --repeats 2")
+    print("  pydpi.py start --mode fake+disorder --ttl 3 --repeats 1")
     print("  pydpi.py start --mode disorder --all")
     print("  pydpi.py test")
     print("  pydpi.py dns")
