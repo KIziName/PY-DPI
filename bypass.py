@@ -291,9 +291,8 @@ class DpiBypass:
             if state is False:
                 try:
                     w.send(packet)
-                except Exception as e:
-                    if not (self._stop_event.is_set() or self._shutting_down):
-                        self.log(f"send: {e}")
+                except Exception:
+                    pass
                 return
 
             try:
@@ -303,16 +302,12 @@ class DpiBypass:
                 return
             except TypeError:
                 pass
-            except Exception as e:
-                if not (self._stop_event.is_set() or self._shutting_down):
-                    self.log(f"send: {e}")
+            except Exception:
                 return
 
             try:
                 w.send(packet)
-            except Exception as e:
-                if not (self._stop_event.is_set() or self._shutting_down):
-                    self.log(f"send: {e}")
+            except Exception:
                 return
 
             if state is None:
