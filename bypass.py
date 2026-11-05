@@ -75,6 +75,7 @@ class DpiBypass:
         self.cfg = config
         self.bypass_all = bool(bypass_all)
         self._lock = threading.Lock()
+        self._send_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._shutting_down = False
         self._started = False
