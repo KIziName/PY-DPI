@@ -871,7 +871,8 @@ class DpiBypass:
 
         with self._lock:
             w_now = self.w
-            self.w = None
+            # self.w = None здесь НЕ обнуляем — иначе _send_one в recv_thread
+            # молча дропнет последние пакеты во время дренажа.
 
         if w_now is not None:
             for state in pending_states:
@@ -926,6 +927,11 @@ class DpiBypass:
         if (recv_thread is not None and recv_thread.is_alive()
                 and recv_thread is not threading.current_thread()):
             recv_thread.join(timeout=RT_RECV_JOIN_TIMEOUT_S)
+
+        # Только теперь, когда все хендлы закрыты и recv_thread мёртв,
+        # обнуляем self.w — никакой _send_one уже не выполнится.
+        with self._lock:
+            self.w = None
 
         if self._started:
             self.log("Остановлено")
