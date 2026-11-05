@@ -75,13 +75,14 @@ class DpiBypass:
         self.cfg = config
         self.bypass_all = bool(bypass_all)
         self._lock = threading.Lock()
-        self._send_lock = threading.Lock()
         self._stop_event = threading.Event()
         self._shutting_down = False
         self._started = False
         self.running = False
         self.w = None
         self._send_has_recalc = None
+        self._send_lock = threading.Lock()
+                     
         self._pending = {}
         self._pending_lock = threading.RLock()
         self.packets_bypassed = 0
@@ -281,25 +282,43 @@ class DpiBypass:
 
     def _send_one(self, packet):
         with self._lock:
-            has = self._send_has_recalc
             w = self.w
-            if w is None:
-                return
-            try:
-                if has is None:
-                    try:
-                        w.send(packet, recalculate_checksum=False)
-                        self._send_has_recalc = True
-                    except TypeError:
-                        self._send_has_recalc = False
-                        w.send(packet)
-                elif has:
-                    w.send(packet, recalculate_checksum=False)
-                else:
+        if w is None:
+            return
+        with self._send_lock:
+            state = self._send_has_recalc
+
+            if state is False:
+                try:
                     w.send(packet)
+                except Exception as e:
+                    if not (self._stop_event.is_set() or self._shutting_down):
+                        self.log(f"send: {e}")
+                return
+
+            try:
+                w.send(packet, recalculate_checksum=False)
+                if state is None:
+                    self._send_has_recalc = True
+                return
+            except TypeError:
+                pass
             except Exception as e:
                 if not (self._stop_event.is_set() or self._shutting_down):
                     self.log(f"send: {e}")
+                return
+
+            try:
+                w.send(packet)
+            except Exception as e:
+                if not (self._stop_event.is_set() or self._shutting_down):
+                    self.log(f"send: {e}")
+                return
+
+            if state is None:
+                self._send_has_recalc = False
+                if self._started:
+                    self.log("send: pydivert без recalculate_checksum (fallback)")
 
     def _send_with_checksum(self, packet):
         try:
