@@ -876,7 +876,7 @@ class DpiBypass:
         if w_now is not None:
             for state in pending_states:
                 for p in state.packets:
-                    with self._lock:
+                    with self._send_lock:
                         try:
                             w_now.send(p)
                         except Exception:
@@ -892,7 +892,7 @@ class DpiBypass:
                     p = pkt_queue.get(timeout=RT_DRAIN_GET_TIMEOUT_S)
                 except queue.Empty:
                     continue
-                with self._lock:
+                with self._send_lock:
                     try:
                         w_now.send(p)
                     except Exception:
@@ -902,7 +902,7 @@ class DpiBypass:
                     p = pkt_queue.get_nowait()
                 except queue.Empty:
                     break
-                with self._lock:
+                with self._send_lock:
                     try:
                         w_now.send(p)
                     except Exception:
