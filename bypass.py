@@ -207,7 +207,6 @@ class DpiBypass:
 
         with self._lock:
             w_now = self.w
-            self.w = None
 
         if w_now is not None:
             for state in pending_states:
@@ -264,6 +263,9 @@ class DpiBypass:
                 and recv_thread.is_alive()
                 and recv_thread is not threading.current_thread()):
             recv_thread.join(timeout=RT.recv_join_timeout_s)
+
+        with self._lock:
+            self.w = None
 
         if self._started:
             self.log("Поток остановлен")
