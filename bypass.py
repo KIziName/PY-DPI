@@ -313,7 +313,7 @@ class DpiBypass:
             if state is None:
                 self._send_has_recalc = False
                 if self._started:
-                    self.log("send: pydivert без recalculate_checksum (fallback)")
+                    self.log("send: старая версия pydivert, работаю в совместимом режиме,рекомендовано (pip install --upgrade pydivert)")
 
     def _send_with_checksum(self, packet):
         try:
