@@ -208,6 +208,7 @@ class DpiBypass:
 
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
+        self._send_lock = threading.Lock()
         self._shutting_down = False
         self._started = False
         self.running = False
