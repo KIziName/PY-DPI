@@ -950,57 +950,26 @@ class DpiBypass:
             if self._stop_event.is_set():
                 return
 
-            def _receiver():
-                nonlocal w
-                retries = 0
-                while not self._stop_event.is_set():
-                    if w is None:
-                        try:
-                            w = pydivert.WinDivert(self.cfg.windivert_filter)
-                            w.open()
-                            with self._lock:
-                                if self._stop_event.is_set() or self._shutting_down:
-                                    try:
-                                        w.close()
-                                    except Exception:
-                                        pass
-                                    w = None
-                                    return
-                                self.w = w
-                            retries = 0
-                        except Exception as e2:
-                            retries += 1
-                            if retries > 3:
-                                self.log("recv: не удалось переоткрыть WinDivert")
-                                return
-                            if self._stop_event.wait(2.0):
-                                return
-                            continue
-                    try:
-                        p = w.recv()
-                    except Exception as e:
-                        if self._stop_event.is_set() or self._shutting_down:
-                            return
-                        self.log(f"recv: {e} — перезапуск")
-                        with self._lock:
-                            try:
-                                w.close()
-                            except Exception:
-                                pass
-                            w = None
-                            self.w = None
-                        if self._stop_event.wait(2.0):
-                            return
-                        continue
-                    if self._shutting_down:
-                        self._send_one(p)
-                        return
-                    try:
-                        pkt_queue.put(p, timeout=RT_QUEUE_PUT_TIMEOUT_S)
-                    except queue.Full:
-                        self._send_one(p)
-                if not self._stop_event.is_set():
-                    self.stop()
+    def _receiver():
+        while not self._stop_event.is_set():
+            try:
+                p = w.recv()
+            except Exception as e:
+                if self._stop_event.is_set() or self._shutting_down:
+                    return
+                self.log(f"recv: критическая ошибка WinDivert: {e}")
+                self.stop()
+                return
+
+            if self._shutting_down:
+                self._send_one(p)
+                return
+            try:
+                pkt_queue.put(p, timeout=RT_QUEUE_PUT_TIMEOUT_S)
+            except queue.Full:
+                self._send_one(p)
+        if not self._stop_event.is_set():
+            self.stop()
 
             recv_thread = threading.Thread(target=_receiver, daemon=True,
                                            name="dpi-recv")
