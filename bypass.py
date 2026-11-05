@@ -382,29 +382,29 @@ class DpiBypass:
             if self._stop_event.is_set():
                 return
 
-    def _receiver():
-        try:
-            while not self._stop_event.is_set():
+            def _receiver():
                 try:
-                    p = w.recv()
-                except Exception as e:
-                    if (self._stop_event.is_set() 
-                            or self._shutting_down):
-                        return
-                    self.log(f"recv: критическая ошибка WinDivert: {e}")
-                    self.stop()
-                    return
+                    while not self._stop_event.is_set():
+                        try:
+                            p = w.recv()
+                        except Exception as e:
+                            if (self._stop_event.is_set() 
+                                    or self._shutting_down):
+                                return
+                            self.log(f"recv: критическая ошибка WinDivert: {e}")
+                            self.stop()
+                            return
 
-                if self._shutting_down:
-                    self._send_one(p)
-                    return
-                try:
-                    pkt_queue.put(p, timeout=RT.queue_put_timeout_s)
-                except queue.Full:
-                    self._send_one(p)
-        finally:
-            if not self._stop_event.is_set():
-                self.stop()
+                        if self._shutting_down:
+                            self._send_one(p)
+                            return
+                        try:
+                            pkt_queue.put(p, timeout=RT.queue_put_timeout_s)
+                        except queue.Full:
+                            self._send_one(p)
+                finally:
+                    if not self._stop_event.is_set():
+                        self.stop()
 
             recv_thread = threading.Thread(
                 target=_receiver, daemon=True, name="dpi-recv")
