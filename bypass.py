@@ -382,72 +382,29 @@ class DpiBypass:
             if self._stop_event.is_set():
                 return
 
-            def _receiver():
-                nonlocal w
-                retries = 0
-                max_retries = 3
+    def _receiver():
+        try:
+            while not self._stop_event.is_set():
                 try:
-                    while not self._stop_event.is_set():
-                        if w is None:
-                            try:
-                                w = pydivert.WinDivert(
-                                    self.cfg.windivert_filter)
-                                w.open()
-                                with self._lock:
-                                    if (self._stop_event.is_set()
-                                            or self._shutting_down):
-                                        try:
-                                            w.close()
-                                        except Exception:
-                                            pass
-                                        w = None
-                                        return
-                                    self.w = w
-                                self.log("WinDivert переоткрыт")
-                                retries = 0
-                            except Exception as e2:
-                                retries += 1
-                                if retries > max_retries:
-                                    self.log(
-                                        f"recv: не удалось открыть WinDivert "
-                                        f"после {max_retries} попыток, "
-                                        f"останавливаюсь")
-                                    return
-                                self.log(
-                                    f"recv: не удалось открыть WinDivert "
-                                    f"({retries}/{max_retries}): {e2}")
-                                if self._stop_event.wait(2.0):
-                                    return
-                                continue
+                    p = w.recv()
+                except Exception as e:
+                    if (self._stop_event.is_set() 
+                            or self._shutting_down):
+                        return
+                    self.log(f"recv: критическая ошибка WinDivert: {e}")
+                    self.stop()
+                    return
 
-                        try:
-                            p = w.recv()
-                        except Exception as e:
-                            if (self._stop_event.is_set()
-                                    or self._shutting_down):
-                                return
-                            self.log(f"recv: {e} — перезапуск WinDivert")
-                            with self._lock:
-                                try:
-                                    w.close()
-                                except Exception:
-                                    pass
-                                w = None
-                                self.w = None
-                            if self._stop_event.wait(2.0):
-                                return
-                            continue
-
-                        if self._shutting_down:
-                            self._send_one(p)
-                            return
-                        try:
-                            pkt_queue.put(p, timeout=RT.queue_put_timeout_s)
-                        except queue.Full:
-                            self._send_one(p)
-                finally:
-                    if not self._stop_event.is_set():
-                        self.stop()
+                if self._shutting_down:
+                    self._send_one(p)
+                    return
+                try:
+                    pkt_queue.put(p, timeout=RT.queue_put_timeout_s)
+                except queue.Full:
+                    self._send_one(p)
+        finally:
+            if not self._stop_event.is_set():
+                self.stop()
 
             recv_thread = threading.Thread(
                 target=_receiver, daemon=True, name="dpi-recv")
