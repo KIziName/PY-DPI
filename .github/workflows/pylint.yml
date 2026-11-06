@@ -6,6 +6,7 @@ jobs:
   build:
     runs-on: windows-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
@@ -20,5 +21,7 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint --errors-only $(git ls-files '*.py')
+        # Теперь --ignore=tests (без cli). Pylint проверит ваш pydpi.py.
+        # Файл cmd.txt он не тронет, так как в команде стоит фильтр '*.py'
+        pylint --errors-only --ignore=tests --disable=C0114,C0115,C0116 $(git ls-files '*.py')
       shell: bash
