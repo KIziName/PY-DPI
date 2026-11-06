@@ -815,7 +815,7 @@ class DpiBypass:
             self._send_fakes(packet, fake_payload)
             self._schedule(
                 self.cfg.fake_split_delay_s,
-                lambda: self._send_pair(snapshot, first, second, seq,
+                lambda: self._send_pair(packet, first, second, seq,
                                         split_at, disorder),
             )
         except Exception as e:
@@ -882,10 +882,10 @@ class DpiBypass:
             self._send_with_checksum(p2)
 
             def resend_first():
-                snapshot.payload = first
-                snapshot.tcp.seq_num = seq
-                snapshot.tcp.psh = True
-                self._send_with_checksum(snapshot)
+                packet.payload = first
+                packet.tcp.seq_num = seq
+                packet.tcp.psh = True
+                self._send_with_checksum(packet)
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
