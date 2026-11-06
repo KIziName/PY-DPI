@@ -352,9 +352,9 @@ class DpiBypass:
                 if cs is not None:
                     # Специально портим чексумму: сервер дропнет фейк,
                     # а DPI всё равно успеет разобрать SNI.
-                    # XOR со случайным r∈[2, 0xFFFF] — гарантированно невалидно
-                    # (r≠0) и не фингерпринтится как "ровно 1 бит".
-                    new_cs = (cs ^ random.randint(0x0002, 0xFFFF)) & CHECKSUM_MASK
+                    # XOR со случайным r∈[2, 0xFFFE] — гарантированно невалидно
+                    # (r≠0) и не даёт «все биты инвертированы».
+                    new_cs = cs ^ random.randint(0x0002, 0xFFFE)
                     if new_cs == 0:
                         new_cs = 0x8000
                     tcp.checksum = new_cs
