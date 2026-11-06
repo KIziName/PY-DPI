@@ -721,6 +721,8 @@ class DpiBypass:
                     continue
                 if host_off + name_len > ext_end:
                     return None
+                if name_len == 0:                   
+                    return None   
                 return (host_off, payload[host_off:host_off + name_len])
             pos += ext_len
         return None
