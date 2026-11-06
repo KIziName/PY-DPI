@@ -78,8 +78,7 @@ IP_WHITELIST_V4 = (
     "240.0.0.0/4",
 )
 IP_WHITELIST_V6 = (
-    "::1/128", "::/128", "::ffff:0:0/96",
-    "fc00::/7", "fe80::/10", "ff00::/8",
+    "::1/128", "::/128", "fc00::/7", "fe80::/10", "ff00::/8",
 )
 
 _WHITELIST_V4_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V4)
