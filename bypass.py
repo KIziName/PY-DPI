@@ -583,8 +583,14 @@ class DpiBypass:
                                     or self._host_matches(hostname)):
                                 action = ("flush_send", state, packet)
                             else:
-                                action = ("fragment", state.packets[0], combined,
-                                          host_off, hostname)
+                                # SNI размазан по нескольким TCP-пакетам.
+                                # Не склеиваем: пересборка combined ломает MSS
+                                # (oversize second) и теряет TCP-заголовки
+                                # packets[1:], что даёт петлю ретрансмитов
+                                # на части путей. Отправляем всё как есть —
+                                # соединение стабильно, обход пропущен.
+                                action = ("flush_as_is_and_send", state, packet)
+                                
                         elif kind == "incomplete":
                             state.buf = combined
                             state.ts = time.monotonic()
@@ -608,8 +614,9 @@ class DpiBypass:
             case ("flush_send", st, pk):
                 self._flush_as_is(st)
                 self._send_one(pk)
-            case ("fragment", base, combined, host_off, hostname):
-                self._fragment_and_send(base, combined, host_off, hostname)
+            case ("flush_as_is_and_send", st, pk):
+                self._flush_as_is(st)
+                self._send_one(pk)
 
     def _flush_expired(self):
         if self._stop_event.is_set():
