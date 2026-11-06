@@ -1,8 +1,6 @@
 import time
 import sys
-import ctypes
 import socket
-import functools
 import traceback
 import threading
 import tkinter as tk
@@ -20,35 +18,7 @@ from config import (
 )
 
 from bypass import DpiBypass, _ip_is_local, pydivert
-
-
-def is_admin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
-        return False
-
-
-def on_ui(func):
-    @functools.wraps(func)
-    def wrapper(self, *args, **kwargs):
-        try:
-            self.ui_queue.put_nowait((func, args, kwargs))
-        except Exception:
-            pass
-    return wrapper
-
-
-def require_admin(title="Ошибка", msg="Нужны права администратора."):
-    def deco(func):
-        @functools.wraps(func)
-        def wrapper(self, *args, **kwargs):
-            if not is_admin():
-                messagebox.showerror(title, msg)
-                return None
-            return func(self, *args, **kwargs)
-        return wrapper
-    return deco
+from helpers import is_admin, on_ui, require_admin
 
 
 class App:
@@ -63,6 +33,7 @@ class App:
         self._test_running = False
         self._test_stop = threading.Event()
 
+        # ── Верхняя панель ──────────────────────────────────────────────
         top = ttk.Frame(root, padding=8)
         top.pack(fill=tk.X)
 
@@ -93,6 +64,7 @@ class App:
         ttk.Button(top, text="О программе", command=self.show_about
                    ).pack(side=tk.RIGHT, padx=5)
 
+        # ── Панель параметров обхода ───────────────────────────────────
         opts = ttk.Frame(root, padding=(8, 0, 8, 8))
         opts.pack(fill=tk.X)
 
@@ -122,6 +94,7 @@ class App:
             command=self._on_bypass_all_toggle)
         self.bypass_all_chk.pack(side=tk.LEFT, padx=(10, 0))
 
+        # ── Домены (read-only, список из config) ───────────────────────
         mid = ttk.LabelFrame(root, text="Домены", padding=5)
         mid.pack(fill=tk.X, padx=8, pady=5)
         self.domains_text = tk.Text(mid, height=UI.domains_text_height,
@@ -129,6 +102,7 @@ class App:
                                     bg=UI.domains_bg)
         self.domains_text.pack(fill=tk.X)
 
+        # ── Лог ────────────────────────────────────────────────────────
         bot = ttk.LabelFrame(root, text="Лог", padding=5)
         bot.pack(fill=tk.BOTH, expand=True, padx=8, pady=5)
         self.log_text = scrolledtext.ScrolledText(
@@ -143,15 +117,20 @@ class App:
         ttk.Label(root, textvariable=self.stats_line, relief=tk.SUNKEN,
                   anchor="w", font=UI.log_font).pack(fill=tk.X, side=tk.BOTTOM)
 
+        # Очереди для межпоточного взаимодействия: log_queue — сообщения
+        # для лога, ui_queue — вызовы методов в UI-потоке.
         self.log_queue = queue.Queue()
         self.ui_queue = queue.Queue()
         self.bypass = None
         self.thread = None
+        # Номер поколения: защищает от «поздних» колбэков завершившегося
+        # движка, если пользователь уже нажал Старт снова.
         self._bypass_gen = 0
         self._watchdog_id = None
 
         self.mode_var.trace_add("write", lambda *_: self._sync_mode_state())
 
+        # Периодические поллеры для UI. Сами перезапускаются в finally.
         self.root.after(UI.log_poll_ms, self._pump_log)
         self.root.after(UI.log_poll_ms, self._pump_ui)
         self.root.after(UI.stats_poll_ms, self._update_stats)
@@ -170,6 +149,8 @@ class App:
         self._sync_mode_state()
 
         self.root.after(1000, self._check_dns_async)
+
+    # ── Окна документации / о программе ───────────────────────────────
 
     def show_docs(self):
         win = tk.Toplevel(self.root)
@@ -261,6 +242,8 @@ class App:
 
         win.bind("<Escape>", lambda e: win.destroy())
 
+    # ── Блокировка контролов ──────────────────────────────────────────
+
     def _set_controls_enabled(self, enabled):
         self._controls_enabled = enabled
         self.mode_combo.config(state="readonly" if enabled else tk.DISABLED)
@@ -271,6 +254,7 @@ class App:
         self._sync_mode_state()
 
     def _sync_mode_state(self):
+        # TTL / повторы / badsum имеют смысл только в fake-режимах.
         if not self._controls_enabled:
             self.ttl_entry.config(state=tk.DISABLED)
             self.badsum_chk.config(state=tk.DISABLED)
@@ -287,6 +271,7 @@ class App:
         self.bypass_all_chk.config(state=tk.NORMAL)
 
     def _on_bypass_all_toggle(self):
+        # Защита от случайного включения «обхода всего».
         if not self.bypass_all_var.get():
             return
         ok = messagebox.askyesno(
@@ -303,6 +288,8 @@ class App:
         if not ok:
             self.bypass_all_var.set(False)
 
+    # ── Закрытие окна ─────────────────────────────────────────────────
+
     def _on_close(self):
         if self._test_running:
             try:
@@ -310,6 +297,14 @@ class App:
             except Exception:
                 pass
             self._test_running = False
+
+        # Отменяем watchdog, если он ещё висит — прибираемся до destroy().
+        if self._watchdog_id is not None:
+            try:
+                self.root.after_cancel(self._watchdog_id)
+            except tk.TclError:
+                pass
+            self._watchdog_id = None
 
         b = self.bypass
         t = self.thread
@@ -324,6 +319,7 @@ class App:
                 and t is not threading.current_thread()):
             t.join(timeout=RT.close_join_timeout_s)
 
+        # Чистим накопившиеся UI-вызовы — они уже никому не нужны.
         while True:
             try:
                 self.ui_queue.get_nowait()
@@ -335,6 +331,8 @@ class App:
         except Exception:
             pass
 
+    # ── Лог ───────────────────────────────────────────────────────────
+
     def log(self, msg):
         self.log_queue.put(str(msg))
 
@@ -344,6 +342,8 @@ class App:
         self.log_text.config(state=tk.DISABLED)
 
     def _pump_log(self):
+        # Переносим накопленные сообщения из потоко-безопасной очереди
+        # в Text. Обрезаем лог до UI.max_log_lines строк.
         try:
             added = False
             while not self.log_queue.empty():
@@ -367,6 +367,8 @@ class App:
             except tk.TclError:
                 pass
 
+    # ── UI-очередь ────────────────────────────────────────────────────
+
     def _pump_ui(self):
         try:
             while True:
@@ -383,6 +385,8 @@ class App:
                 self.root.after(UI.log_poll_ms, self._pump_ui)
             except tk.TclError:
                 pass
+
+    # ── Строка статистики ─────────────────────────────────────────────
 
     def _update_stats(self):
         try:
@@ -420,8 +424,11 @@ class App:
             except tk.TclError:
                 pass
 
+    # ── Тест WinDivert ────────────────────────────────────────────────
+
     @require_admin(title="Тест", msg="Нужны права администратора.")
     def test_windivert(self):
+        # Проверяем, что WinDivert открывается и пакеты через него ходят.
         if pydivert is None:
             messagebox.showerror("Тест", "pip install pydivert")
             return
@@ -449,8 +456,12 @@ class App:
                 if stop_ev.is_set():
                     return
 
-                w = pydivert.WinDivert(CONFIG.windivert_test_filter)
-                w.open()
+                try:
+                    w = pydivert.WinDivert(CONFIG.windivert_test_filter)
+                    w.open()
+                except Exception as e:
+                    self.log(f"!! не удалось открыть WinDivert: {e}")
+                    return
 
                 if stop_ev.is_set():
                     return
@@ -498,6 +509,7 @@ class App:
 
                 stop_ev.set()
 
+                # Дренаж очереди — вернуть всё, что успело прийти.
                 while True:
                     try:
                         p = recv_q.get_nowait()
@@ -546,7 +558,11 @@ class App:
             self._set_controls_enabled(True)
             self.start_btn.config(state=tk.NORMAL)
 
+    # ── Проверка DNS на подмену ───────────────────────────────────────
+
     def _check_dns_async(self):
+        # Если популярные домены резолвятся в локальные IP — вероятна
+        # подмена DNS провайдером, и обход TLS не поможет.
         def worker():
             sample = DNS_CHECK_DOMAINS
             bad = []
@@ -579,6 +595,8 @@ class App:
 
         threading.Thread(target=worker, daemon=True,
                          name="dns-check").start()
+
+    # ── Старт / стоп обхода ───────────────────────────────────────────
 
     def toggle(self):
         if self.thread is not None:
@@ -613,6 +631,7 @@ class App:
 
         mode = self.mode_var.get()
 
+        # Валидация числовых полей; вне fake-режимов — мягкий фолбэк.
         try:
             ttl = int(self.ttl_var.get())
             if not TTL_MIN <= ttl <= TTL_MAX:
@@ -650,6 +669,8 @@ class App:
         self.status.set("Запускаю…")
         self.start_btn.config(text="■ Стоп")
 
+        # Новое поколение: колбэк старого движка (если он ещё не отстрелил)
+        # не должен влиять на новый UI.
         self._bypass_gen += 1
         gen = self._bypass_gen
 
@@ -689,6 +710,8 @@ class App:
         gen = self._bypass_gen
 
         def _watchdog():
+            # Если поток не завершился штатно за RT.stop_watchdog_ms —
+            # принудительно отпускаем UI, чтобы окно не «залипло».
             self._watchdog_id = None
             if self._bypass_gen != gen:
                 return
@@ -721,6 +744,7 @@ class App:
 
     @on_ui
     def _on_bypass_done(self, gen):
+        # Игнорируем колбэк устаревшего поколения движка.
         if gen != self._bypass_gen:
             return
         if self._watchdog_id is not None:
@@ -733,7 +757,10 @@ class App:
         self.thread = None
         self._reset_ui()
 
+    # ── Заполнение списка доменов ─────────────────────────────────────
+
     def fill_domains(self):
+        # Read-only поле: список доменов берётся из config.DEFAULT_DOMAINS.
         self.domains_text.config(state=tk.NORMAL)
         self.domains_text.delete("1.0", tk.END)
         self.domains_text.insert("1.0", "\n".join(DEFAULT_DOMAINS))
