@@ -931,8 +931,10 @@ class DpiBypass:
                 return
 
             self._send_fakes(packet, fake_payload)
-
-            snapshot = self._clone_packet(packet)
+            
+            # packet после _send_pair не используется — лямбда отрабатывает
+            # в worker'е, _fragment_and_send к тому времени уже вернулся.
+            # Поэтому мутируем packet напрямую — второй клон не нужен.
             self._schedule(
                 self.cfg.fake_split_delay_s,
                 lambda: self._send_pair(
