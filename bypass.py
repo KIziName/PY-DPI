@@ -990,15 +990,16 @@ class DpiBypass:
             p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
             p2.tcp.psh = False
             self._send_with_checksum(p2)
-
+            
+            # snapshot — уже независимая копия оригинала, resend_first
+            # вызывается ровно один раз, поэтому клонировать ещё нет смысла.
             snapshot = self._clone_packet(packet)
 
             def resend_first():
-                p1 = self._clone_packet(snapshot)
-                p1.payload = first
-                p1.tcp.seq_num = seq
-                p1.tcp.psh = True
-                self._send_with_checksum(p1)
+                snapshot.payload = first
+                snapshot.tcp.seq_num = seq
+                snapshot.tcp.psh = True
+                self._send_with_checksum(snapshot)
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
