@@ -342,30 +342,37 @@ class App:
         self.log_text.config(state=tk.DISABLED)
 
     def _pump_log(self):
-        # Переносим накопленные сообщения из потоко-безопасной очереди
-        # в Text. Обрезаем лог до UI.max_log_lines строк.
-        try:
-            added = False
-            while not self.log_queue.empty():
-                msg = self.log_queue.get()
-                self.log_text.config(state=tk.NORMAL)
-                self.log_text.insert(tk.END, f"[{time.strftime('%H:%M:%S')}] {msg}\n")
-                added = True
-
-            if added:
-                try:
-                    total = int(self.log_text.index("end-1c").split(".")[0]) - 1
-                    if total > UI.max_log_lines:
-                        self.log_text.delete(
-                            "1.0", f"{total - UI.max_log_lines + 1}.0")
-                    self.log_text.see(tk.END)
-                finally:
-                    self.log_text.config(state=tk.DISABLED)
-        finally:
+    # Переносим накопленные сообщения из потоко-безопасной очереди
+    # в Text. Открываем виджет один раз на весь батч, а не на
+    # каждое сообщение — иначе при большом потоке логов это тормозит UI.
+    try:
+        batch = []
+        while True:
             try:
-                self.root.after(UI.log_poll_ms, self._pump_log)
-            except tk.TclError:
-                pass
+                batch.append(self.log_queue.get_nowait())
+            except queue.Empty:
+                break
+
+        if batch:
+            self.log_text.config(state=tk.NORMAL)
+            try:
+                for msg in batch:
+                    self.log_text.insert(
+                        tk.END,
+                        f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+                total = int(
+                    self.log_text.index("end-1c").split(".")[0]) - 1
+                if total > UI.max_log_lines:
+                    self.log_text.delete(
+                        "1.0", f"{total - UI.max_log_lines + 1}.0")
+                self.log_text.see(tk.END)
+            finally:
+                self.log_text.config(state=tk.DISABLED)
+    finally:
+        try:
+            self.root.after(UI.log_poll_ms, self._pump_log)
+        except tk.TclError:
+            pass
 
     # ── UI-очередь ────────────────────────────────────────────────────
 
