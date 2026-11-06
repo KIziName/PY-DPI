@@ -1,4 +1,3 @@
-# helpers.py
 import ctypes
 import functools
 from tkinter import messagebox
