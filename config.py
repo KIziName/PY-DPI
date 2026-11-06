@@ -149,7 +149,7 @@ class DpiConfig:
     def windivert_filter(self) -> str:
         return (
             f"(tcp and ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"and tcp.PayloadLength > 50)) "
+            f"and tcp.PayloadLength > 1)) "
             f"or (udp and (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0))"
         )
 
