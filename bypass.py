@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from config import ( PORT_HTTPS, HTTP_METHODS, HTTP_HEADER_MAX_SCAN, _PAYLOAD_FIRST_BYTES,
     _HTTP_METHOD_MAX_LEN, _U16, TLS_CONTENT_HANDSHAKE, TLS_HANDSHAKE_CLIENT_HELLO, TLS_SNI_EXT_TYPE,
-    TLS_RECORD_HEADER_LEN, TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN, SEQ_MASK, SEQ_HALF, CHECKSUM_MASK, CHECKSUM_FLIP,
+    TLS_RECORD_HEADER_LEN, TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN, SEQ_MASK, SEQ_HALF, CHECKSUM_MASK,
     CRLF, CRLFCRLF, HOST_HEADER, HOST_PORT_SEP, DOT_BYTE, IP_WHITELIST_V4, IP_WHITELIST_V6,
     CONFIG, RT,
 )
@@ -352,7 +352,12 @@ class DpiBypass:
                 if cs is not None:
                     # Специально портим чексумму: сервер дропнет фейк,
                     # а DPI всё равно успеет разобрать SNI.
-                    tcp.checksum = (cs ^ CHECKSUM_FLIP) & CHECKSUM_MASK
+                    # XOR со случайным r∈[2, 0xFFFF] — гарантированно невалидно
+                    # (r≠0) и не фингерпринтится как "ровно 1 бит".
+                    new_cs = (cs ^ random.randint(0x0002, 0xFFFF)) & CHECKSUM_MASK
+                    if new_cs == 0:
+                        new_cs = 0x8000
+                    tcp.checksum = new_cs
         except Exception:
             pass
         self._send_one(packet)
