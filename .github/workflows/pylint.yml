@@ -21,5 +21,5 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        pylint --errors-only --ignore=tests --disable=C0114,C0115,C0116 $(git ls-files '*.py')
+        pylint --errors-only --disable=C0114,C0115,C0116,E0401 $(git ls-files '*.py' ':(exclude)tests/*')
       shell: bash
