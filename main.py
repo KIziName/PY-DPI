@@ -17,7 +17,7 @@ from config import (
     EXIT_NO_ADMIN,
 )
 from dpi import App, is_admin
-
+from gui import App
 
 if __name__ == "__main__":
     if not is_admin():
