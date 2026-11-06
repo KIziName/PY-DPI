@@ -214,7 +214,7 @@ class DpiBypass:
         self.w = None
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
-                     
+
         self._pending = {}
         self._pending_lock = threading.RLock()
 
@@ -258,6 +258,7 @@ class DpiBypass:
                 except Exception:
                     pass
 
+            now = time.monotonic()
             if now - last_flush >= self.cfg.pending_flush_interval_s:
                 last_flush = now
                 try:
@@ -415,7 +416,6 @@ class DpiBypass:
         if kind == "match":
             host_off, hostname = data
             if self.bypass_all or self._host_matches(hostname):
-                self._mark_bypassed(len(payload))
                 self._fragment_and_send(packet, payload, host_off, hostname)
             else:
                 self._send_one(packet)
@@ -492,7 +492,7 @@ class DpiBypass:
                 self._flush_as_is(st)
                 self._send_one(pk)
             case ("fragment", base, combined, host_off, hostname):
-                self._mark_bypassed(len(combined))
+                # Статистика учитывается внутри _fragment_and_send.
                 self._fragment_and_send(base, combined, host_off, hostname)
 
     def _flush_expired(self):
@@ -735,6 +735,9 @@ class DpiBypass:
         if split_at >= len(payload) - 1:
             self._send_whole(packet, payload)
             return
+
+        self._mark_bypassed(len(payload))
+
         first = payload[:split_at]
         second = payload[split_at:]
         seq = packet.tcp.seq_num
@@ -871,8 +874,7 @@ class DpiBypass:
 
         with self._lock:
             w_now = self.w
-            # self.w = None здесь НЕ обнуляем — иначе _send_one в recv_thread
-            # молча дропнет последние пакеты во время дренажа.
+
 
         if w_now is not None:
             for state in pending_states:
@@ -928,8 +930,6 @@ class DpiBypass:
                 and recv_thread is not threading.current_thread()):
             recv_thread.join(timeout=RT_RECV_JOIN_TIMEOUT_S)
 
-        # Только теперь, когда все хендлы закрыты и recv_thread мёртв,
-        # обнуляем self.w — никакой _send_one уже не выполнится.
         with self._lock:
             self.w = None
 
