@@ -681,15 +681,16 @@ class DpiBypass:
         hdr_end = payload.find(CRLFCRLF, first_line_end,
                                first_line_end + HTTP_HEADER_MAX_SCAN)
         if hdr_end < 0:
-            max_scan = min(len(payload), HTTP_HEADER_MAX_SCAN)
-        else:
-            max_scan = min(hdr_end, HTTP_HEADER_MAX_SCAN)
+            # Заголовки не закончились — не выходим за HTTP_HEADER_MAX_SCAN
+            # от начала первой строки (а не от начала payload, как было).
+            hdr_end = min(len(payload),
+                          first_line_end + HTTP_HEADER_MAX_SCAN)
 
         pos = first_line_end + 2
 
-        while pos <= max_scan:
+        while pos <= hdr_end:
             line_end = payload.find(CRLF, pos)
-            if line_end < 0 or line_end > max_scan:
+            if line_end < 0 or line_end > hdr_end:
                 return None
             if line_end == pos:
                 return None
@@ -732,30 +733,42 @@ class DpiBypass:
         # ("none", None) — не наш случай (не TLS ClientHello / не HTTP).
         if not payload:
             return ("none", None)
+        if payload[0] == TLS_CONTENT_HANDSHAKE:
+            return self._detect_tls(payload)
+        if (self._is_http_request_start(payload)
+                or self._is_http_request_partial(payload)):
+            return self._detect_http(payload)
+        return ("none", None)
 
-        if (payload[0] == TLS_CONTENT_HANDSHAKE
-                and len(payload) < TLS_RECORD_HEADER_LEN + 1):
+    def _detect_tls(self, payload):
+        if len(payload) < TLS_RECORD_HEADER_LEN + 1:
             return ("incomplete", None)
-
-        if self._is_tls_clienthello_start(payload):
-            sni = self._tls_sni(payload)
-            if sni is not None:
-                return ("match", sni)
-            if self._tls_record_incomplete(payload):
-                return ("incomplete", None)
+        if not self._is_tls_clienthello_start(payload):
             return ("none", None)
+        sni = self._tls_sni(payload)
+        if sni is not None:
+            return ("match", sni)
+        if self._tls_record_incomplete(payload):
+            return ("incomplete", None)
+        return ("none", None)
 
+    def _detect_http(self, payload):
         if self._is_http_request_partial(payload):
             return ("incomplete", None)
-
-        if self._is_http_request_start(payload):
-            host = self._http_host(payload)
-            if host is not None:
-                return ("match", host)
-            if payload.find(CRLFCRLF, 0, HTTP_HEADER_MAX_SCAN) < 0:
-                return ("incomplete", None)
+        if not self._is_http_request_start(payload):
             return ("none", None)
-
+        host = self._http_host(payload)
+        if host is not None:
+            return ("match", host)
+        # Host не нашли. Смотрим, закончились ли заголовки: ищем CRLFCRLF
+        # относительно first_line_end, а не от начала payload — иначе
+        # при длинном URL (> 8 КБ) уходим в pending без нужды.
+        first_line_end = payload.find(CRLF)
+        if first_line_end < 0:
+            return ("none", None)
+        if payload.find(CRLFCRLF, first_line_end,
+                        first_line_end + HTTP_HEADER_MAX_SCAN) < 0:
+            return ("incomplete", None)
         return ("none", None)
 
     def _host_matches(self, host):
@@ -840,7 +853,7 @@ class DpiBypass:
                 if host_off + name_len > ext_end:
                     return None
                 if name_len == 0:
-                    return None   
+                    return None
                 return (host_off, payload[host_off:host_off + name_len])
             pos += ext_len
 
@@ -990,7 +1003,7 @@ class DpiBypass:
             p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
             p2.tcp.psh = False
             self._send_with_checksum(p2)
-            
+
             # snapshot — уже независимая копия оригинала, resend_first
             # вызывается ровно один раз, поэтому клонировать ещё нет смысла.
             snapshot = self._clone_packet(packet)
