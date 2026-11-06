@@ -1,4 +1,13 @@
 import sys
+
+if sys.version_info < (3, 11):
+    print(
+        f"!! PY-DPI: рекомендуется Python 3.11+ "
+        f"(текущая {sys.version_info.major}.{sys.version_info.minor}). "
+        f"Продолжаю работу.",
+        file=sys.stderr,
+    )
+
 import tkinter as tk
 
 from tkinter import messagebox
