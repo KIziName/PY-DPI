@@ -21,7 +21,5 @@ jobs:
         pip install pylint
     - name: Analysing the code with pylint
       run: |
-        # Теперь --ignore=tests (без cli). Pylint проверит ваш pydpi.py.
-        # Файл cmd.txt он не тронет, так как в команде стоит фильтр '*.py'
         pylint --errors-only --ignore=tests --disable=C0114,C0115,C0116 $(git ls-files '*.py')
       shell: bash
