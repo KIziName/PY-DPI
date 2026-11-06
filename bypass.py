@@ -938,7 +938,7 @@ class DpiBypass:
             self._schedule(
                 self.cfg.fake_split_delay_s,
                 lambda: self._send_pair(
-                    snapshot, first, second, seq, split_at, disorder),
+                    packet, first, second, seq, split_at, disorder),
             )
         except Exception as e:
             self.log(f"frag error: {e}")
@@ -1006,15 +1006,12 @@ class DpiBypass:
             p2.tcp.psh = False
             self._send_with_checksum(p2)
 
-            # snapshot — уже независимая копия оригинала, resend_first
-            # вызывается ровно один раз, поэтому клонировать ещё нет смысла.
-            snapshot = self._clone_packet(packet)
 
             def resend_first():
-                snapshot.payload = first
-                snapshot.tcp.seq_num = seq
-                snapshot.tcp.psh = True
-                self._send_with_checksum(snapshot)
+                packet.payload = first
+                packet.tcp.seq_num = seq
+                packet.tcp.psh = True
+                self._send_with_checksum(packet)
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
