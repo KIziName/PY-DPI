@@ -59,7 +59,6 @@ _PAYLOAD_FIRST_BYTES = frozenset(
 SEQ_MASK = 0xFFFFFFFF
 SEQ_HALF = 0x7FFFFFFF
 CHECKSUM_MASK = 0xFFFF
-CHECKSUM_FLIP = 0x0001
 
 CRLF = b"\r\n"
 CRLFCRLF = b"\r\n\r\n"
@@ -345,7 +344,12 @@ class DpiBypass:
                 if cs is not None:
                     # Специально портим чексумму: сервер дропнет фейк,
                     # а DPI всё равно успеет разобрать SNI.
-                    tcp.checksum = (cs ^ CHECKSUM_FLIP) & CHECKSUM_MASK
+                    # XOR со случайным r∈[2, 0xFFFE] — гарантированно невалидно
+                    # (r≠0) и не даёт «все биты инвертированы».
+                    new_cs = cs ^ random.randint(0x0002, 0xFFFE)
+                    if new_cs == 0:
+                        new_cs = 0x8000
+                    tcp.checksum = new_cs
         except Exception:
             pass
         self._send_one(packet)
