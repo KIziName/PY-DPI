@@ -16,7 +16,7 @@ from config import (
     ADMIN_REQUIRED_MSG,
     EXIT_NO_ADMIN,
 )
-from dpi import App, is_admin
+from helpers import is_admin
 from gui import App
 
 if __name__ == "__main__":
