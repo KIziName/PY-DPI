@@ -232,18 +232,40 @@ DOCS_SECTIONS = (
 )
 
 DEFAULT_DOMAINS = (
+    # ── Meta ──────────────────────────────────────
     "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
     "messenger.com", "m.me", "facebook.net",
     "instagram.com", "cdninstagram.com", "threads.net",
-    "whatsapp.com", "whatsapp.net", "wa.me", "twitter.com", "x.com", "twimg.com", "t.co",
+    "whatsapp.com", "whatsapp.net", "wa.me",
+
+    # ── X / Twitter ───────────────────────────────
+    "twitter.com", "x.com", "twimg.com", "t.co",
+
+    # ── Discord ───────────────────────────────────
     "discord.com", "discordapp.com", "discordapp.net", "discord.gg",
     "discord.media", "discordactivities.com", "discord.new", "discord.gift",
-    "telegram.org", "t.me", "telegram.me", "telegra.ph", "telesco.pe", "cdn-telegram.org",
-    "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com", "youtubemusic.com", "yt.be",
-    "ggpht.com", "youtubei.googleapis.com", "youtube.googleapis.com", "youtube-nocookie.com", "youtubekids.com", "googleusercontent.com",
-    "gstatic.com", "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
+
+    # ── Telegram ──────────────────────────────────
+    "telegram.org", "t.me", "telegram.me", "telegra.ph", "telesco.pe",
+    "cdn-telegram.org",
+
+    # ── YouTube / Google ──────────────────────────
+    "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
+    "youtubemusic.com", "yt.be", "ggpht.com",
+    "youtubei.googleapis.com", "youtube.googleapis.com",
+    "youtube-nocookie.com", "youtubekids.com", "googleusercontent.com",
+    "gstatic.com",
+
+    # ── TikTok ────────────────────────────────────
+    "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
+
+    # ── Snapchat ──────────────────────────────────
     "snapchat.com", "snap.com", "sc-cdn.net", "sc-gw.com",
+
+    # ── Dev / GitHub ──────────────────────────────
     "github.com", "githubusercontent.com", "githubassets.com",
+
+    # ── Tor / Signal ──────────────────────────────
     "torproject.org", "torproject.net", "tor.eff.org",
     "signal.org", "whispersystems.org",
 )
