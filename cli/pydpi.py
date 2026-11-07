@@ -121,30 +121,42 @@ RT_TEST_DURATION_S = 5
 RT_WORKER_MIN_WAIT_S = 0.001
 
 DEFAULT_DOMAINS = (
+    # ── Meta ──────────────────────────────────────
     "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
     "messenger.com", "m.me", "facebook.net",
     "instagram.com", "cdninstagram.com", "threads.net",
-    "whatsapp.com", "whatsapp.net", "wa.me", "whatsapp.org",
-    "viber.com", "vb.me", "viber.me", "viber.net", "viber.co",
-    "vibercdn.com", "twitter.com", "x.com", "twimg.com", "t.co", "x.ai",
+    "whatsapp.com", "whatsapp.net", "wa.me",
+
+    # ── X / Twitter ───────────────────────────────
+    "twitter.com", "x.com", "twimg.com", "t.co",
+
+    # ── Discord ───────────────────────────────────
     "discord.com", "discordapp.com", "discordapp.net", "discord.gg",
     "discord.media", "discordactivities.com", "discord.new", "discord.gift",
+
+    # ── Telegram ──────────────────────────────────
     "telegram.org", "t.me", "telegram.me", "telegra.ph", "telesco.pe",
     "cdn-telegram.org",
+
+    # ── YouTube / Google ──────────────────────────
     "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
     "youtubemusic.com", "yt.be", "ggpht.com",
     "youtubei.googleapis.com", "youtube.googleapis.com",
-    "youtube-nocookie.com", "youtubekids.com",
+    "youtube-nocookie.com", "youtubekids.com", "googleusercontent.com",
+    "gstatic.com",
+
+    # ── TikTok ────────────────────────────────────
     "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
+
+    # ── Snapchat ──────────────────────────────────
     "snapchat.com", "snap.com", "sc-cdn.net", "sc-gw.com",
+
+    # ── Dev / GitHub ──────────────────────────────
     "github.com", "githubusercontent.com", "githubassets.com",
+
+    # ── Tor / Signal ──────────────────────────────
     "torproject.org", "torproject.net", "tor.eff.org",
-    "dns.google", "dns.quad9.net", "dns.nextdns.io",
-    "cloudflare-dns.com", "one.one.one.one",
-    "dns.adguard.com", "doh.opendns.com",
-    "openai.com", "chatgpt.com", "oaiusercontent.com", "oaistatic.com",
     "signal.org", "whispersystems.org",
-    "soundcloud.com", "sndcdn.com",
 )
 
 DNS_CHECK_DOMAINS = (
