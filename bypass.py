@@ -926,7 +926,7 @@ class DpiBypass:
             split_at = 1
         if split_at >= len(payload) - 1:
             # Сплит невозможен — отправляем как есть, без обхода.
-            self._send_whole(packet, payload)
+            self._send_with_checksum(packet)
             return
 
         # В статистике учитываем только фактически разбитые пакеты.
@@ -968,16 +968,6 @@ class DpiBypass:
                 self._send_with_checksum(packet)
             except Exception:
                 pass
-
-    def _send_whole(self, packet, payload):
-        if packet.payload == payload:
-            self._send_with_checksum(packet)
-            return
-
-        p = self._clone_packet(packet)
-        p.payload = payload
-        p.tcp.psh = True
-        self._send_with_checksum(p)
 
     def _send_fakes(self, packet, fake_payload):
         repeats = max(1, int(self.cfg.fake_repeats))
