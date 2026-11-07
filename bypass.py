@@ -799,6 +799,13 @@ class DpiBypass:
         # Структура: record(5) + handshake(4) + version(2) + random(32) +
         #            session_id(1+n) + cipher_suites(2+n) +
         #            compression(1+n) + extensions(2+n).
+        #
+        # ВАЖНО: все границы внутри блока SNI проверяются против
+        # ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len (конец ТЕКУЩЕГО
+        # расширения), а не против ext_end (конец ВСЕХ расширений).
+        # Иначе битый пакет с name_len, вылезающим за SNI, но не за
+        # ext_end, заставит вернуть «hostname», захватывающий соседние
+        # расширения (ALPN и т.д.), и _make_fake их затрёт.
         if len(payload) < TLS_MIN_CLIENTHELLO_LEN:
             return None
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -845,24 +852,32 @@ class DpiBypass:
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
-            if pos + TLS_EXT_HEADER_LEN + ext_len > ext_end:
+            # Конец ТЕКУЩЕГО расширения (заголовок + данные).
+            ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len
+            if ext_limit > ext_end:
                 return None
             pos += TLS_EXT_HEADER_LEN
+
             if ext_type == TLS_SNI_EXT_TYPE:
-                if pos + 5 > ext_end:
+                # Внутри данных SNI: [2] list_len + [1] name_type +
+                # [2] name_len + [name_len] host_name.
+                if pos + 5 > ext_limit:
                     return None
                 name_type = payload[pos + 2]
                 name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
+
                 if name_type != 0:
-                    pos += ext_len
+                    pos = ext_limit
                     continue
-                if host_off + name_len > ext_end:
+
+                if host_off + name_len > ext_limit:
                     return None
                 if name_len == 0:
                     return None
                 return (host_off, payload[host_off:host_off + name_len])
-            pos += ext_len
+
+            pos = ext_limit
 
         return None
 
@@ -938,7 +953,7 @@ class DpiBypass:
                 return
 
             self._send_fakes(packet, fake_payload)
-            
+
             # packet после _send_pair не используется — лямбда отрабатывает
             # в worker'е, _fragment_and_send к тому времени уже вернулся.
             # Поэтому мутируем packet напрямую — второй клон не нужен.
