@@ -13,6 +13,9 @@ python pydpi.py start
 # Самый простой режим
 python pydpi.py start --mode split
 
+# Не портить контрольную сумму фейка (если сайты ломаются на fake)
+python pydpi.py start --mode fake+split --no-badsum
+
 # Disorder + разрыв в середине домена второго уровня (по умолчанию)
 python pydpi.py start --mode disorder --split midsld
 
@@ -46,7 +49,6 @@ python pydpi.py start --all --mode fake+split
 # Проверить, что WinDivert открывается (5 сек)
 python pydpi.py test
 
-
 # Проверить DNS на подмену (нужен интернет)
 python pydpi.py dns
 
@@ -67,17 +69,20 @@ python pydpi.py list-modes --help
 
 # Рекомендуемая последовательность (если не пробивает) 
 
-# 1. Дефолт
+# 1. Дефолт (disorder + midsld)
 python pydpi.py start
 
-# 2. Если Discord/YouTube не открываются — fake+split
+# 2. Split (простой, иногда пробивает там, где disorder — нет)
+python pydpi.py start --mode split
+
+# 3. Fake + split (когда обычный split не проходит)
 python pydpi.py start --mode fake+split
 
-# 3. Если fake не проходит — disorder без фейка
-python pydpi.py start --mode disorder
+# 4. Fake + disorder (наиболее агрессивный)
+python pydpi.py start --mode fake+disorder --ttl 2 --repeats 2
 
-# 4. Если и disorder не пробивает — fake+disorder
-python pydpi.py start --mode fake+disorder --ttl 2 --repeats 3
+# 5. То же, но с random-точкой разреза (если midsld детектится)
+python pydpi.py start --mode fake+disorder --ttl 2 --repeats 2 --split random
 
-# 5. Если совсем ничего — обход всего
-python pydpi.py start --all --mode fake+disorder
+# 6. Если совсем ничего — обход всего
+python pydpi.py start --all --mode fake+disorder --ttl 2 --repeats 3
