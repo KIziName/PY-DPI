@@ -28,5 +28,5 @@ if __name__ == "__main__":
         sys.exit(EXIT_NO_ADMIN)
 
     root = tk.Tk()
-    App(root)
+    app = App(root)
     root.mainloop()
