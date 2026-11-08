@@ -299,4 +299,8 @@ DEFAULT_DOMAINS = (
     "meek.azureedge.net",
     "signal.org", "whispersystems.org", "signal.art",
     "signal.group", "signal.me", "signal.tube", "signalcdn.org",
+    
+    # ── Торренты ──────────────────────────────────
+    "rutracker.org", "rutracker.net", "rutracker.ru", "rutracker.cc",
+    "rutrk.org", "static.rutracker.org", "api.rutracker.org",
 )
