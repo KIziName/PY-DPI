@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 APP_TITLE = "PY-DPI"
 APP_AUTHOR = "KiziName"
-APP_VERSION = "V1.4"
+APP_VERSION = "V1.4.1"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
 EXIT_NO_ADMIN = 1
