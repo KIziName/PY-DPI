@@ -129,34 +129,69 @@ DEFAULT_DOMAINS = (
 
     # ── X / Twitter ───────────────────────────────
     "twitter.com", "x.com", "twimg.com", "t.co",
+    "twttr.com", "twttr.net", "twvid.com", "tweetdeck.com",
+    "twittercommunity.com", "twitteroauth.com", "twtrdns.net",
+    "ads-twitter.com", "cms-twdigitalassets.com",
+    "twitter.biz", "twitter.jp", "twitterinc.com", "twitterstat.us",
+    "periscope.tv", "pscp.tv", "vine.co", "twitpic.com",
+    "tellapart.com", "twitterflightschool.com",
 
     # ── Discord ───────────────────────────────────
     "discord.com", "discordapp.com", "discordapp.net", "discord.gg",
     "discord.media", "discordactivities.com", "discord.new", "discord.gift",
+    "dis.gd", "discord.co", "discord.design", "discord.dev",
+    "discord.gifts", "discord.store", "discord.tools",
+    "discordmerch.com", "discordpartygames.com",
+    "discord-activities.com", "discordsays.com",
 
     # ── Telegram ──────────────────────────────────
     "telegram.org", "t.me", "telegram.me", "telegra.ph", "telesco.pe",
-    "cdn-telegram.org",
+    "cdn-telegram.org", "telegram-cdn.org", "tdesktop.com",
+    "telega.one", "telegram.dog", "telegram.space", "tx.me",
+    "fragment.com", "comments.app", "contest.com", "graph.org",
+    "quiz.directory", "tg.dev", "usercontent.dev", "ton.org",
 
     # ── YouTube / Google ──────────────────────────
     "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
     "youtubemusic.com", "yt.be", "ggpht.com",
     "youtubei.googleapis.com", "youtube.googleapis.com",
     "youtube-nocookie.com", "youtubekids.com", "googleusercontent.com",
-    "gstatic.com",
+    "gstatic.com", "wide-youtube.l.google.com", "ytimg.l.google.com",
+    "youtubeembeddedplayer.googleapis.com", "youtube-ui.l.google.com",
+    "yt-video-upload.l.google.com", "jnn-pa.googleapis.com",
+    "returnyoutubedislikeapi.com",
 
     # ── TikTok ────────────────────────────────────
     "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
+    "ibytedtos.com", "muscdn.com", "musical.ly", "tik-tokapi.com",
+    "tiktokcdn-us.com", "tiktokcdn-eu.com", "tiktokd.net", "tiktokd.org",
+    "tiktokv.us", "tiktokv.eu", "tiktokw.us", "ttwstatic.com",
+
+    # ── Anime Online (RU) ─────────────────────────
+    "jut.su", "jut-su.net", "animego.org", "amedia.site", "yummyani.me",
+    "kara.su", "animebest.org", "animedia.tv", "animespirit.ru",
+    "sovetromantica.com", "adultmult.tv", "anilibria.tv", "anilibria.uno",
+    "anilibria.org", "anilibria.wtf", "anilib.me", "anistars.ru",
+    "anistar.org", "animaunt.org", "anime-portal.su", "shiza-project.com",
 
     # ── Snapchat ──────────────────────────────────
     "snapchat.com", "snap.com", "sc-cdn.net", "sc-gw.com",
-
+    "bitmoji.com", "bitstrips.com", "snapkit.com", "snap-dev.net",
+    
     # ── Dev / GitHub ──────────────────────────────
     "github.com", "githubusercontent.com", "githubassets.com",
+    "github.io", "githubapp.com", "githubstatus.com", "ghcr.io",
 
     # ── Tor / Signal ──────────────────────────────
     "torproject.org", "torproject.net", "tor.eff.org",
-    "signal.org", "whispersystems.org",
+    "gettor.me", "onion.link", "onion.ws", "onion.pet",
+    "meek.azureedge.net",
+    "signal.org", "whispersystems.org", "signal.art",
+    "signal.group", "signal.me", "signal.tube", "signalcdn.org",
+    
+    # ── Торренты ──────────────────────────────────
+    "rutracker.org", "rutracker.net", "rutracker.ru", "rutracker.cc",
+    "rutrk.org", "static.rutracker.org", "api.rutracker.org",
 )
 
 DNS_CHECK_DOMAINS = (
