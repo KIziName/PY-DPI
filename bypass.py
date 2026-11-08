@@ -1010,8 +1010,8 @@ class DpiBypass:
 
     def _send_pair(self, packet, first, second, seq, split_at, disorder=False):
         if disorder:
-            # Сначала второй сегмент, затем (с задержкой) первый.
-            # DPI видит "дырку" в seq и пропускает, сервер склеивает.
+            # В disorder клон НУЖЕН, так как p2 (вторая половина) улетает сразу,
+            # а packet (первая половина) ждет своей очереди в resend_first.
             p2 = self._clone_packet(packet)
             p2.payload = second
             p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
@@ -1027,14 +1027,17 @@ class DpiBypass:
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
-            p1 = self._clone_packet(packet)
-            p1.payload = first
-            p1.tcp.seq_num = seq
-            p1.tcp.psh = False
-            self._send_with_checksum(p1)
+            # В split мы отправляем оба куска сразу, 
+            # поэтому клонировать пакет вообще не нужно 
+            
+            # 1. Отправляем первую половину (мутируем оригинал)
+            packet.payload = first
+            packet.tcp.seq_num = seq
+            packet.tcp.psh = False
+            self._send_with_checksum(packet)
 
-            p2 = self._clone_packet(packet)
-            p2.payload = second
-            p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
-            p2.tcp.psh = True
-            self._send_with_checksum(p2)
+            # 2. Отправляем вторую половину (мутируем тот же оригинал)
+            packet.payload = second
+            packet.tcp.seq_num = (seq + split_at) & SEQ_MASK
+            packet.tcp.psh = True
+            self._send_with_checksum(packet)
