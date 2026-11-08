@@ -103,8 +103,8 @@ class DpiBypass:
             pending_conn = len(self._pending)
         now = time.monotonic()
         with self._bw_lock:
-            # Скользящее окно 5 секунд — оценка текущей скорости.
-            while self._bw and now - self._bw[0][0] > 5.0:
+            # Скользящее окно 2 секунд — оценка текущей скорости.
+            while self._bw and now - self._bw[0][0] > 2.0:
                 self._bw.popleft()
             if self._bw:
                 span = now - self._bw[0][0]
