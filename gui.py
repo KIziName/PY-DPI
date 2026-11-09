@@ -109,6 +109,11 @@ class App:
             bot, height=UI.log_text_height, state=tk.DISABLED, font=UI.log_font)
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
+        # Настройка цветов для лога
+        self.log_text.tag_config("error", foreground="#e74c3c")   # Красный
+        self.log_text.tag_config("warning", foreground="#f39c12") # Оранжевый
+        self.log_text.tag_config("success", foreground="#2ecc71") # Зеленый
+
         self.status = tk.StringVar(value="Готов")
         ttk.Label(root, textvariable=self.status, relief=tk.SUNKEN,
                   anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
@@ -357,9 +362,19 @@ class App:
                 self.log_text.config(state=tk.NORMAL)
                 try:
                     for msg in batch:
+                        # Определяем цвет в зависимости от текста
+                        tag = None
+                        if "❌" in msg or "ОШИБКА" in msg or "Ошибка" in msg:
+                            tag = "error"
+                        elif "⚠" in msg:
+                            tag = "warning"
+                        elif "ОК" in msg or "ДА" in msg or "Запущен" in msg or "Готов" in msg:
+                            tag = "success"
+        
                         self.log_text.insert(
                             tk.END,
-                            f"[{time.strftime('%H:%M:%S')}] {msg}\n")
+                            f"[{time.strftime('%H:%M:%S')}] {msg}\n", tag)
+                        
                     total = int(
                         self.log_text.index("end-1c").split(".")[0]) - 1
                     if total > UI.max_log_lines:
