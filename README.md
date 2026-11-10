@@ -61,7 +61,7 @@
 (Полный список в папке cli в файле cmd.txt)
 
 ## Wiki про PY-DPI
-- https://github.com/KIziName/PY-DPI/wiki
+- github.com/KIziName/PY-DPI**/**wiki
 
 ## Замер производительности через PY-SPY (Python: 3.13.15)
 - Нагрузка: YouTube в 4K (5 минут), Speedtest на полную катушку, много вкладок.
