@@ -61,7 +61,7 @@
 (Полный список в папке cli в файле cmd.txt)
 
 ## Wiki про PY-DPI (Википедия)
-- github.com/KIziName/PY-DPI**/**wiki
+- <https://github.com/KIziName/PY-DPI/wiki>
 
 ## Требования
 - ***Python 3.10+***
