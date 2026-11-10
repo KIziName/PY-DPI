@@ -55,14 +55,13 @@
 - `python pydpi.py start --mode split --split random`
 - `python pydpi.py start --mode fake+split`
 - `python pydpi.py start --all`
-- `python pydpi.py start --all --mode disorder`
 - `python pydpi.py test`
 - `python pydpi.py dns`
-- `python pydpi.py --help`
-- `python pydpi.py start --help`
-- `python pydpi.py test --help`
 
-(Полный список в папке cli в файле cmd.txt) (Лог в консоли обновляется каждый час)
+(Полный список в папке cli в файле cmd.txt)
+
+## Wiki про PY-DPI
+- https://github.com/KIziName/PY-DPI.wiki.git
 
 ## Замер производительности через PY-SPY (Python: 3.13.15)
 - Нагрузка: YouTube в 4K (5 минут), Speedtest на полную катушку, много вкладок.
