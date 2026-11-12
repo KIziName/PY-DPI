@@ -176,7 +176,7 @@ class DpiConfig:
         """Фильтр пакетов для драйвера WinDivert"""
         return (
             f"(tcp and ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
-            f"and tcp.PayloadLength > 1)) "
+            f"and tcp.PayloadLength > 0)) "
             f"or (udp and (udp.DstPort == {PORT_HTTPS} and udp.PayloadLength > 0))"
         )
 
