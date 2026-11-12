@@ -90,6 +90,18 @@ class TestInit(unittest.TestCase):
         bp = DpiBypass(["example.com", "EXAMPLE.COM", "example.com."],
                        "split", lambda m: None)
         self.assertEqual(len(bp.domains), 1)
+        
+
+class TestDetectECH(unittest.TestCase):
+    
+    def setUp(self):
+        self.bp = DpiBypass(["example.com"], "split", lambda m: None)
+
+    def test_detect_tls_ech(self):
+        ch = mk_client_hello_ech()
+        kind, data = self.bp._detect_tls(ch)
+        self.assertEqual(kind, "ech")
+        self.assertIsNone(data)
 
 if __name__ == "__main__":
     unittest.main()
