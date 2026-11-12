@@ -524,7 +524,11 @@ class DpiBypass:
             # Логируем один раз за сессию и пропускаем пакет как есть.
             if not self._ech_logged:
                 outer = data[1].decode("ascii", "replace") if data else "?"
-                self.log(f"⚠ ECH: outer SNI = {outer!r} — обход по SNI невозможен")
+                self.log(
+                    f"⚠ ECH: реальный SNI зашифрован, outer SNI = {outer!r}. "
+                    f"Фрагментация по SNI невозможна — пакет пропущен как есть. "
+                    f"Если сайт не открывается — попробуйте отключить ECH в браузере."
+                )
                 self._ech_logged = True
             self._send_one(packet)
             return 
