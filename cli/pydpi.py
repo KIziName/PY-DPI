@@ -737,10 +737,6 @@ class DpiBypass:
     @staticmethod
     def _tls_sni(payload):
         # Разбор TLS ClientHello до extension SNI (тип 0x0000).
-        # Структура: record(5) + handshake(4) + version(2) + random(32) +
-        #            session_id(1+n) + cipher_suites(2+n) +
-        #            compression(1+n) + extensions(2+n).
-        #
         # ВАЖНО: все границы внутри блока SNI проверяются против
         # ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len (конец ТЕКУЩЕГО
         # расширения), а не против ext_end (конец ВСЕХ расширений).
@@ -903,7 +899,7 @@ class DpiBypass:
                 self._send_with_checksum(fake)
 
     @staticmethod
-    def _fake_sni(n, tld):
+    def _fake_sni(n, tld, exclude=None):
         suffix = b"." + tld
         label_len = n - len(suffix)
         if label_len < 1:
@@ -911,14 +907,23 @@ class DpiBypass:
         label = bytes(
             random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
         )
-        return label + suffix
+        result = label + suffix
+        # Гарантия: фейк не должен совпасть с реальным хостом.
+        # Для label_len==1 коллизия возможна с вероятностью 1/26 (x.com,
+        # wa.me, yt.be). Сдвигаем первый байт — это детерминированно уводит
+        # от коллизии при любой длине label.
+        if exclude is not None and result.lower() == exclude.lower():
+            first = label[0:1]
+            new_first = b"a" if first != b"a" else b"b"
+            result = new_first + label[1:] + suffix
+        return result
 
     @staticmethod
     def _make_fake(payload, host_off, hostname, tld):
         n = len(hostname)
         if n == 0:
             return None
-        rep = DpiBypass._fake_sni(n, tld)
+        rep = DpiBypass._fake_sni(n, tld, exclude=hostname)
         if rep is None or len(rep) != n:
             return None
         fake = bytearray(payload)
