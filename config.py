@@ -2,11 +2,13 @@ import struct
 
 from dataclasses import dataclass
 
+# --- Информация о приложении ---
 APP_TITLE = "PY-DPI"
 APP_AUTHOR = "KiziName"
 APP_VERSION = "V1.4.2"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
+# --- Тексты для окна с ошибкой прав администратора ---
 EXIT_NO_ADMIN = 1
 ADMIN_REQUIRED_TITLE = APP_TITLE
 ADMIN_REQUIRED_MSG = (
@@ -16,20 +18,23 @@ ADMIN_REQUIRED_MSG = (
     "  • либо из консоли, открытой с повышенными правами."
 )
 
+# --- Сетевые порты ---
 PORT_HTTP = 80
 PORT_HTTPS = 443
 
+# --- HTTP методы для парсинга ---
 HTTP_METHODS = (
     b"GET", b"POST", b"HEAD", b"PUT", b"DELETE",
     b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE", b"PRI",
 )
 _HTTP_METHOD_MAX_LEN = max(len(m) for m in HTTP_METHODS)
-HTTP_HEADER_MAX_SCAN = 8192
+HTTP_HEADER_MAX_SCAN = 8192 # Максимальный размер заголовков для чтения
 
+# --- Константы протокола TLS/SSL ---
 TLS_CONTENT_HANDSHAKE = 0x16
 TLS_HANDSHAKE_CLIENT_HELLO = 0x01
 TLS_SNI_EXT_TYPE = 0x0000
-TLS_ECH_EXT_TYPE = 0xfe0d
+TLS_ECH_EXT_TYPE = 0xfe0d         # Encrypted Client Hello
 TLS_RECORD_HEADER_LEN = 5
 TLS_HANDSHAKE_HEADER_LEN = 4 
 TLS_CLIENT_HELLO_VERSION_LEN = 2 
@@ -37,33 +42,37 @@ TLS_CLIENT_HELLO_RANDOM_LEN = 32
 TLS_EXT_HEADER_LEN = 4
 TLS_MIN_CLIENTHELLO_LEN = 43
 
-# --- Константы для фейковой суммы ---
+# --- Константы для намеренной порчи контрольной суммы (фейк-пакеты) ---
 BADSUM_XOR_MIN = 0x0002 
 BADSUM_XOR_MAX = 0xFFFE           
 BADSUM_FALLBACK = 0x8000            
 
-# --- Константы для статистики ---
-BW_WINDOW_S = 2.0 #(окно оценки скорости)
+# --- Константы для расчета статистики ---
+BW_WINDOW_S = 2.0 # Окно оценки скорости (в секундах)
 
 _U16 = struct.Struct(">H")
 
+# Быстрый поиск валидных первых байт пакета
 _PAYLOAD_FIRST_BYTES = frozenset(
     (TLS_CONTENT_HANDSHAKE,) + tuple(m[0] for m in HTTP_METHODS)
 )
 
+# --- Константы TCP Sequence (защита от переполнения) ---
 SEQ_MASK = 0xFFFFFFFF
 SEQ_HALF = 0x7FFFFFFF
 
+# --- Ограничения TTL для фейков ---
 TTL_MIN = 1
 TTL_MAX = 6
 
+# --- Разделители и спецсимволы ---
 CRLF = b"\r\n"
 CRLFCRLF = b"\r\n\r\n"
 HOST_HEADER = b"host:"
 HOST_PORT_SEP = b":"
-
 DOT_BYTE = 0x2E
 
+# --- Белые списки IP-адресов (локальные сети и служебные диапазоны) ---
 IP_WHITELIST_V4 = (
     "0.0.0.0/8",
     "10.0.0.0/8",
@@ -84,12 +93,14 @@ IP_WHITELIST_V6 = (
     "ff00::/8",
 )
 
+# --- Доступные режимы обхода и позиции сплита ---
 MODES = ("split", "disorder", "fake+split", "fake+disorder")
 MODES_SPLIT = ("random", "midsld")
 
 
 @dataclass(frozen=True, slots=True)
 class UiConfig:
+    """Настройки графического интерфейса (GUI)"""
     window_size: str = "900x720"
     window_min_size: tuple = (660, 500)
 
@@ -117,6 +128,7 @@ UI = UiConfig()
 
 @dataclass(frozen=True, slots=True)
 class RuntimeConfig:
+    """Настройки многопоточности и таймаутов"""
     shutdown_grace_s: float = 1.0
     stop_watchdog_ms: int = 5000
     close_join_timeout_s: float = 5.0
@@ -136,6 +148,7 @@ RT = RuntimeConfig()
 
 @dataclass(frozen=True, slots=True)
 class DpiConfig:
+    """Основные настройки движка обхода DPI"""
     disorder_delay_s: float = 0.005
     fake_split_delay_s: float = 0.003
     fake_ttl: int = 3
@@ -143,8 +156,9 @@ class DpiConfig:
     fake_badsum: bool = True
     split_pos: str = "midsld"
 
-    test_duration_s: int = 5
+    test_duration_s: int = 5 # Длительность теста WinDivert
 
+    # Настройки буфера для склейки пакетов
     pending_max_bytes: int = 8192
     pending_timeout_s: float = 1.0
     pending_max_packets: int = 32
@@ -155,6 +169,7 @@ class DpiConfig:
 
     @property
     def windivert_filter(self) -> str:
+        """Фильтр пакетов для драйвера WinDivert"""
         return (
             f"(tcp and ((tcp.DstPort == {PORT_HTTPS} or tcp.DstPort == {PORT_HTTP}) "
             f"and tcp.PayloadLength > 1)) "
@@ -163,11 +178,13 @@ class DpiConfig:
 
     @property
     def windivert_test_filter(self) -> str:
+        """Фильтр для тестового режима"""
         return self.windivert_filter
 
 
 CONFIG = DpiConfig()
 
+# --- Домены для авто-проверки подмены DNS при запуске ---
 DNS_CHECK_DOMAINS = (
     "youtube.com",
     "googlevideo.com",
@@ -181,6 +198,7 @@ DNS_CHECK_DOMAINS = (
     "github.com",
 )
 
+# --- Тексты для окна "Документация" в GUI ---
 DOCS_SECTIONS = (
     ("h1", "Что делает PY-DPI"),
     ("p", "Локально обходит DPI-блокировки: разбивает TLS ClientHello "
@@ -243,6 +261,7 @@ DOCS_SECTIONS = (
           "на 8.8.8.8 или 1.1.1.1."),
 )
 
+# --- Список доменов, которые обходятся по умолчанию ---
 DEFAULT_DOMAINS = (
     # ── Meta ──────────────────────────────────────
     "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
