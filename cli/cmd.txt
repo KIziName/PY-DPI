@@ -13,6 +13,12 @@ python pydpi.py start
 # Самый простой режим
 python pydpi.py start --mode split
 
+# Разбиение на 3 части (по порядку). Помогает против умных DPI.
+python pydpi.py start --mode triple_split
+
+# Разбиение на 3 части в обратном порядке
+python pydpi.py start --mode triple_disorder
+
 # Не портить контрольную сумму фейка (если сайты ломаются на fake)
 python pydpi.py start --mode fake+split --no-badsum
 
@@ -75,14 +81,20 @@ python pydpi.py start
 # 2. Split (простой, иногда пробивает там, где disorder — нет)
 python pydpi.py start --mode split
 
-# 3. Fake + split (когда обычный split не проходит)
+# 3. Triple Split (разбиение на 3 части, если DPI склеивает 2 пакета)
+python pydpi.py start --mode triple_split
+
+# 4. Triple Disorder (разбиение на 3 части в обратном порядке)
+python pydpi.py start --mode triple_disorder
+
+# 5. Fake + split (когда обычный split не проходит)
 python pydpi.py start --mode fake+split
 
-# 4. Fake + disorder (наиболее агрессивный)
+# 6. Fake + disorder (наиболее агрессивный)
 python pydpi.py start --mode fake+disorder --ttl 2 --repeats 2
 
-# 5. То же, но с random-точкой разреза (если midsld детектится)
+# 7. То же, но с random-точкой разреза (если midsld детектится)
 python pydpi.py start --mode fake+disorder --ttl 2 --repeats 2 --split random
 
-# 6. Если совсем ничего — обход всего
+# 8. Если совсем ничего — обход всего
 python pydpi.py start --all --mode fake+disorder --ttl 2 --repeats 3
