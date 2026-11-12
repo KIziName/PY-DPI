@@ -83,6 +83,7 @@ class DpiBypass:
         self.w = None
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
+        self._ech_logged = False 
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -526,6 +527,14 @@ class DpiBypass:
                 self._send_one(packet)
             return
 
+        if kind == "ech":
+            if not self._ech_logged:
+                self.log("⚠ ECH: ClientHello зашифрован, обход по SNI невозможен. "
+                         "Отключите Encrypted Client Hello в настройках браузера.")
+                self._ech_logged = True
+            self._send_one(packet)
+            return 
+
         if kind == "incomplete":
             # Пакет обрезан — буферизуем и ждём следующий сегмент,
             # чтобы распарсить ClientHello/HTTP-заголовок целиком.
@@ -754,6 +763,8 @@ class DpiBypass:
             return ("none", None)
         sni = self._tls_sni(payload)
         if sni is not None:
+            if sni[0] == "ech":        
+                return ("ech", None)
             return ("match", sni)
         if self._tls_record_incomplete(payload):
             return ("incomplete", None)
@@ -844,10 +855,15 @@ class DpiBypass:
         ext_end = pos + ext_total_len
         if ext_end > record_end:
             return None
-
+            
+        has_ech = False
+        
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
+            if ext_type == 0xfe0d:
+                has_ech = True
+                
             # Конец ТЕКУЩЕГО расширения (заголовок + данные).
             ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len
             if ext_limit > ext_end:
@@ -875,6 +891,8 @@ class DpiBypass:
 
             pos = ext_limit
 
+        if has_ech:
+            return ("ech", None)
         return None
 
     @staticmethod
