@@ -13,8 +13,11 @@ from dataclasses import dataclass
 
 from config import ( PORT_HTTPS, HTTP_METHODS, HTTP_HEADER_MAX_SCAN, _PAYLOAD_FIRST_BYTES,
     _HTTP_METHOD_MAX_LEN, _U16, TLS_CONTENT_HANDSHAKE, TLS_HANDSHAKE_CLIENT_HELLO, TLS_SNI_EXT_TYPE,
-    TLS_RECORD_HEADER_LEN, TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN, SEQ_MASK, SEQ_HALF,
+    TLS_ECH_EXT_TYPE, TLS_RECORD_HEADER_LEN, TLS_HANDSHAKE_HEADER_LEN, 
+    TLS_CLIENT_HELLO_VERSION_LEN, TLS_CLIENT_HELLO_RANDOM_LEN,
+    TLS_EXT_HEADER_LEN, TLS_MIN_CLIENTHELLO_LEN, SEQ_MASK, SEQ_HALF,
     CRLF, CRLFCRLF, HOST_HEADER, HOST_PORT_SEP, DOT_BYTE, IP_WHITELIST_V4, IP_WHITELIST_V6,
+    BADSUM_XOR_MIN, BADSUM_XOR_MAX, BADSUM_FALLBACK, BW_WINDOW_S,
     CONFIG, RT,
 )
 
@@ -105,7 +108,7 @@ class DpiBypass:
         now = time.monotonic()
         with self._bw_lock:
             # Скользящее окно 2 секунд — оценка текущей скорости.
-            while self._bw and now - self._bw[0][0] > 2.0:
+            while self._bw and now - self._bw[0][0] > BW_WINDOW_S:
                 self._bw.popleft()
             if self._bw:
                 span = now - self._bw[0][0]
@@ -355,9 +358,9 @@ class DpiBypass:
                     # а DPI всё равно успеет разобрать SNI.
                     # XOR со случайным r∈[2, 0xFFFE] — гарантированно невалидно
                     # (r≠0) и не даёт «все биты инвертированы».
-                    new_cs = cs ^ random.randint(0x0002, 0xFFFE)
+                    new_cs = cs ^ random.randint(BADSUM_XOR_MIN, BADSUM_XOR_MAX)
                     if new_cs == 0:
-                        new_cs = 0x8000
+                        new_cs = BADSUM_FALLBACK
                     tcp.checksum = new_cs
         except Exception:
             pass
@@ -827,10 +830,10 @@ class DpiBypass:
         if record_end < TLS_MIN_CLIENTHELLO_LEN:
             return None
 
-        pos = 9
-        if pos + 2 + 32 > record_end:
+        pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
+        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > record_end:
             return None
-        pos += 2 + 32
+        pos += TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN
 
         if pos + 1 > record_end:
             return None
@@ -861,7 +864,7 @@ class DpiBypass:
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
-            if ext_type == 0xfe0d:
+            if ext_type == TLS_ECH_EXT_TYPE:
                 has_ech = True
                 
             # Конец ТЕКУЩЕГО расширения (заголовок + данные).
