@@ -520,10 +520,11 @@ class DpiBypass:
             return
 
         if kind == "ech":
-            # Логируем ECH ровно один раз
+            # ECH: реальный SNI зашифрован, фрагментация по SNI невозможна.
+            # Логируем один раз за сессию и пропускаем пакет как есть.
             if not self._ech_logged:
-                self.log("⚠ ECH: ClientHello зашифрован, обход по SNI невозможен. "
-                         "Отключите Encrypted Client Hello в настройках браузера.")
+                outer = data[1].decode("ascii", "replace") if data else "?"
+                self.log(f"⚠ ECH: outer SNI = {outer!r} — обход по SNI невозможен")
                 self._ech_logged = True
             self._send_one(packet)
             return 
@@ -741,7 +742,7 @@ class DpiBypass:
         sni = self._tls_sni(payload)
         if sni is not None:
             if sni[0] == "ech":
-                return ("ech", None)
+                return ("ech", sni)
             return ("match", sni)
         if self._tls_record_incomplete(payload):
             return ("incomplete", None)
@@ -782,7 +783,13 @@ class DpiBypass:
 
     @staticmethod
     def _tls_sni(payload):
-        """Извлекает SNI из TLS ClientHello (с поддержкой детекта ECH)"""
+        """Извлекает SNI из TLS ClientHello (с поддержкой детекта ECH).
+
+        Возвращает:
+          - (host_off, hostname)  — SNI найден, ECH отсутствует;
+          - ("ech", sni_or_none)  — ECH присутствует (sni может быть None);
+          - None                  — ничего не найдено.
+        """
         if len(payload) < TLS_MIN_CLIENTHELLO_LEN:
             return None
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -823,6 +830,7 @@ class DpiBypass:
             return None
             
         has_ech = False
+        sni = None
         
         while pos + TLS_EXT_HEADER_LEN <= ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
@@ -835,25 +843,21 @@ class DpiBypass:
                 return None
             pos += TLS_EXT_HEADER_LEN
             
-            if ext_type == TLS_SNI_EXT_TYPE:
+            if ext_type == TLS_SNI_EXT_TYPE and sni is None:
                 if pos + 5 > ext_limit:
                     return None
                 name_type = payload[pos + 2]
                 name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
-                if name_type != 0:
-                    pos = ext_limit
-                    continue
-                if host_off + name_len > ext_limit:
-                    return None
-                if name_len == 0:
-                    return None
-                return (host_off, payload[host_off:host_off + name_len])
+                if name_type == 0 and name_len > 0 and host_off + name_len <= ext_limit:
+                    sni = (host_off, payload[host_off:host_off + name_len])
+                # если name_type != 0 или name_len == 0 — просто пропускаем
+                # это расширение и продолжаем сканировать остальные
             pos = ext_limit
             
         if has_ech:
-            return ("ech", None)
-        return None
+            return ("ech", sni)
+        return sni
 
     @staticmethod
     def _midsld_offset(hostname):
