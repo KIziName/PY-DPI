@@ -952,7 +952,7 @@ class DpiBypass:
         return host_off + max(0, n)
 
     def _fragment_and_send(self, packet, payload, host_off, hostname):
-         """Разрезает пакет и отправляет (с опциональным добавлением фейков или 3-way сплитом)."""
+        """Разрезает пакет и отправляет (с опциональным добавлением фейков или 3-way сплитом)."""
         split_at = self._split_offset_for_match(host_off, hostname)
 
         if split_at < 1:
