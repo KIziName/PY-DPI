@@ -37,14 +37,11 @@ class TestFakeSni(unittest.TestCase):
             self.assertTrue(rep.endswith(b"." + tld), rep)
 
     def test_random_label_not_repeating(self):
-        # два вызова с одной длиной → разные label (случайные буквы)
-        # вероятность совпадения 16 случайных букв — исчезающе мала
         rep1 = DpiBypass._fake_sni(20, b"com")
         rep2 = DpiBypass._fake_sni(20, b"com")
         self.assertNotEqual(rep1, rep2)
 
     def test_label_is_lowercase_alpha(self):
-        # label состоит только из a-z (не 'a'*N, не цифры, не мусор)
         for _ in range(10):
             rep = DpiBypass._fake_sni(20, b"com")
             label, _, tld = rep.rpartition(b".")
@@ -52,8 +49,6 @@ class TestFakeSni(unittest.TestCase):
             self.assertEqual(tld, b"com")
 
     def test_not_all_a(self):
-        # label — не 'aaaa...', иначе DPI палит по regex ^a+\.
-        # 16 случайных 'a' подряд = (1/26)^16 ≈ 0, берём 20 попыток
         reps = [DpiBypass._fake_sni(20, b"com") for _ in range(20)]
         all_a = [r for r in reps if r.rpartition(b".")[0] == b"a" * 16]
         self.assertEqual(all_a, [])
@@ -67,7 +62,6 @@ class TestFakeSni(unittest.TestCase):
         self.assertIsNone(DpiBypass._fake_sni(3, b"com"))
 
     def test_min_length_boundaries(self):
-        # минимум для "ru" — 4 ("x.ru"), для "com" — 5 ("x.com")
         rep = DpiBypass._fake_sni(4, b"ru")
         self.assertIsNotNone(rep)
         self.assertEqual(len(rep), 4)
@@ -106,25 +100,23 @@ class TestMakeFake(unittest.TestCase):
         self.assertNotEqual(fake[3:14], host)
 
     def test_sni_is_random_com(self):
-        host = b"example.com"  # 11 байт
+        host = b"example.com"
         fake = DpiBypass._make_fake(host, 0, host, b"com")
         self.assertEqual(len(fake), 11)
         self.assertTrue(fake.endswith(b".com"))
         self.assertNotEqual(fake, host)
 
     def test_sni_is_random_ru(self):
-        host = b"example.com"  # 11 байт
+        host = b"example.com"
         fake = DpiBypass._make_fake(host, 0, host, b"ru")
         self.assertEqual(len(fake), 11)
         self.assertTrue(fake.endswith(b".ru"))
         self.assertNotEqual(fake, host)
 
     def test_too_short_returns_none(self):
-        host = b"t.me"  # 4 байта
+        host = b"t.me"
         payload = host
-        # для "com" — не влезает (a.com = 5 > 4)
         self.assertIsNone(DpiBypass._make_fake(payload, 0, host, b"com"))
-        # для "ru" — влезает (x.ru = 4)
         fake = DpiBypass._make_fake(payload, 0, host, b"ru")
         self.assertIsNotNone(fake)
         self.assertEqual(len(fake), 4)
@@ -149,15 +141,30 @@ class TestNoRealDomainInFake(unittest.TestCase):
         self.assertTrue(fake.endswith(b".ru"))
 
     def test_fake_never_matches_real(self):
+        # 200 итераций: для label_len==1 (x.com) вероятность коллизии 1/26,
+        # за 200 итераций старый код упал бы с шансом ~99.96%.
         for host in (b"discord.com", b"www.youtube.com", b"x.com",
                      b"github.com", b"api.telegram.org",
                      b"www.yandex.ru"):
-            fake = DpiBypass._make_fake(host, 0, host, b"com")
-            if fake is not None:
-                self.assertNotEqual(fake, host, host)
+            for _ in range(200):
+                fake = DpiBypass._make_fake(host, 0, host, b"com")
+                if fake is not None:
+                    self.assertNotEqual(
+                        fake.lower(), host.lower(),
+                        f"collision with {host!r}")
+
+    def test_exclude_guarantees_difference(self):
+        # Прямой детерминированный тест на exclude: для всех 26 возможных
+        # 1-буквенных доменов фейк не должен совпасть с реальным.
+        for c in range(ord('a'), ord('z') + 1):
+            host = bytes([c]) + b".com"
+            for _ in range(50):
+                rep = DpiBypass._fake_sni(5, b"com", exclude=host)
+                self.assertIsNotNone(rep)
+                self.assertNotEqual(rep.lower(), host.lower(),
+                                    f"exclude failed for {host!r}")
 
     def test_fake_structure(self):
-        # структура: label (a-z, правильная длина) + "." + tld
         for host in (b"discord.com", b"www.youtube.com",
                      b"api.telegram.org", b"www.yandex.ru"):
             fake = DpiBypass._make_fake(host, 0, host, b"com")
