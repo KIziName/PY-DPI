@@ -72,5 +72,29 @@ class TestTlsRecordIncomplete(unittest.TestCase):
     def test_short_header(self):
         self.assertTrue(DpiBypass._tls_record_incomplete(b"\x16\x03"))
 
+    def mk_client_hello_ech():
+    """ClientHello с расширением ECH (0xfe0d), но БЕЗ обычного SNI."""
+    # ECH ext: type 0xfe0d, len 4, data 0000
+    ech_ext = b"\xfe\x0d\x00\x04\x00\x00\x00\x00"
+    exts = len(ech_ext).to_bytes(2, "big") + ech_ext
+    body = (b"\x03\x03" + b"\x00" * 32 + b"\x00"
+            + b"\x00\x02\x00\x2f" + b"\x01\x00" + exts)
+    hs = b"\x01" + len(body).to_bytes(3, "big") + body
+    return b"\x16\x03\x01" + len(hs).to_bytes(2, "big") + hs
+
+
+class TestECH(unittest.TestCase):
+
+    def test_tls_sni_returns_ech(self):
+        ch = mk_client_hello_ech()
+        result = DpiBypass._tls_sni(ch)
+        self.assertEqual(result, ("ech", None))
+
+    def test_tls_sni_returns_normal_if_sni_exists(self):
+        # Если есть и SNI и ECH, приоритет отдается SNI (программа обойдет его)
+        ch = mk_client_hello(b"example.com")
+        off, host = DpiBypass._tls_sni(ch)
+        self.assertEqual(host, b"example.com")
+
 if __name__ == "__main__":
     unittest.main()
