@@ -48,8 +48,17 @@ TLS_HANDSHAKE_CLIENT_HELLO = 0x01
 TLS_SNI_EXT_TYPE = 0x0000
 TLS_ECH_EXT_TYPE = 0xfe0d
 TLS_RECORD_HEADER_LEN = 5
+TLS_HANDSHAKE_HEADER_LEN = 4
+TLS_CLIENT_HELLO_VERSION_LEN = 2
+TLS_CLIENT_HELLO_RANDOM_LEN = 32
 TLS_EXT_HEADER_LEN = 4
 TLS_MIN_CLIENTHELLO_LEN = 43
+
+BADSUM_XOR_MIN = 0x0002
+BADSUM_XOR_MAX = 0xFFFE
+BADSUM_FALLBACK = 0x8000
+
+STATS_REPORT_INTERVAL_S = 3600.0
 
 _U16 = struct.Struct(">H")
 
@@ -261,7 +270,7 @@ class DpiBypass:
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
         
-        self._ech_logged = False # <--- ECH
+        self._ech_logged = False
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -391,13 +400,9 @@ class DpiBypass:
             if tcp is not None:
                 cs = tcp.checksum
                 if cs is not None:
-                    # Специально портим чексумму: сервер дропнет фейк,
-                    # а DPI всё равно успеет разобрать SNI.
-                    # XOR со случайным r∈[2, 0xFFFE] — гарантированно невалидно
-                    # (r≠0) и не даёт «все биты инвертированы».
-                    new_cs = cs ^ random.randint(0x0002, 0xFFFE)
+                    new_cs = cs ^ random.randint(BADSUM_XOR_MIN, BADSUM_XOR_MAX)
                     if new_cs == 0:
-                        new_cs = 0x8000
+                        new_cs = BADSUM_FALLBACK
                     tcp.checksum = new_cs
         except Exception:
             pass
@@ -749,13 +754,6 @@ class DpiBypass:
 
     @staticmethod
     def _tls_sni(payload):
-        # Разбор TLS ClientHello до extension SNI (тип 0x0000).
-        # ВАЖНО: все границы внутри блока SNI проверяются против
-        # ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len (конец ТЕКУЩЕГО
-        # расширения), а не против ext_end (конец ВСЕХ расширений).
-        # Иначе битый пакет с name_len, вылезающим за SNI, но не за
-        # ext_end, заставит вернуть «hostname», захватывающий соседние
-        # расширения (ALPN и т.д.), и _make_fake их затрёт.
         if len(payload) < TLS_MIN_CLIENTHELLO_LEN:
             return None
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -768,10 +766,12 @@ class DpiBypass:
             return None
         if record_end < TLS_MIN_CLIENTHELLO_LEN:
             return None
-        pos = 9
-        if pos + 2 + 32 > record_end:
+            
+        pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
+        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > record_end:
             return None
-        pos += 2 + 32
+        pos += TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN
+        
         if pos + 1 > record_end:
             return None
         sid_len = payload[pos]
@@ -800,14 +800,11 @@ class DpiBypass:
             if ext_type == TLS_ECH_EXT_TYPE:
                 has_ech = True
                 
-            # Конец ТЕКУЩЕГО расширения (заголовок + данные).
             ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len
             if ext_limit > ext_end:
                 return None
             pos += TLS_EXT_HEADER_LEN
             if ext_type == TLS_SNI_EXT_TYPE:
-                # Внутри данных SNI: [2] list_len + [1] name_type +
-                # [2] name_len + [name_len] host_name.
                 if pos + 5 > ext_limit:
                     return None
                 name_type = payload[pos + 2]
@@ -829,9 +826,6 @@ class DpiBypass:
 
     @staticmethod
     def _midsld_offset(hostname):
-        # Середина домена второго уровня (SLD):
-        #   example.com         -> середина "example"
-        #   sub.example.co.uk   -> середина "co"
         hostname = hostname.rstrip(b".")
         n = len(hostname)
         if n < 3:
@@ -859,7 +853,6 @@ class DpiBypass:
             rel = self._midsld_offset(h)
             if rel is not None:
                 return host_off + rel
-        # Фолбэк — случайная точка внутри имени.
         n = len(h)
         if n >= 2:
             return host_off + random.randint(1, n - 1)
@@ -870,11 +863,9 @@ class DpiBypass:
         if split_at < 1:
             split_at = 1
         if split_at >= len(payload) - 1:
-            # Сплит невозможен — отправляем как есть, без обхода.
             self._send_with_checksum(packet)
             return
 
-        # В статистике учитываем только фактически разбитые пакеты.
         self._mark_bypassed(len(payload))
 
         first = payload[:split_at]
@@ -889,8 +880,6 @@ class DpiBypass:
             fake_payload = self._make_fake(payload, host_off, hostname,
                                self.cfg.fake_sni_tld)
             if fake_payload is None:
-                # Не удалось собрать фейк (слишком короткий SNI) —
-                # обходимся обычным сплитом.
                 self._send_pair(packet, first, second, seq, split_at, disorder)
                 return
             self._send_fakes(packet, fake_payload)
@@ -930,10 +919,6 @@ class DpiBypass:
             random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
         )
         result = label + suffix
-        # Гарантия: фейк не должен совпасть с реальным хостом.
-        # Для label_len==1 коллизия возможна с вероятностью 1/26 (x.com,
-        # wa.me, yt.be). Сдвигаем первый байт — это детерминированно уводит
-        # от коллизии при любой длине label.
         if exclude is not None and result.lower() == exclude.lower():
             first = label[0:1]
             new_first = b"a" if first != b"a" else b"b"
@@ -954,7 +939,6 @@ class DpiBypass:
 
     def _send_pair(self, packet, first, second, seq, split_at, disorder=False):
         if disorder:
-            # Сначала второй сегмент, затем (с задержкой) первый.
             p2 = self._clone_packet(packet)
             p2.payload = second
             p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
@@ -969,16 +953,11 @@ class DpiBypass:
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
-            # В split мы отправляем оба куска сразу, 
-            # поэтому клонировать пакет вообще не нужно
-            
-            # 1. Отправляем первую половину (мутируем оригинал)
             packet.payload = first
             packet.tcp.seq_num = seq
             packet.tcp.psh = False
             self._send_with_checksum(packet)
 
-            # 2. Отправляем вторую половину (мутируем тот же оригинал)
             packet.payload = second
             packet.tcp.seq_num = (seq + split_at) & SEQ_MASK
             packet.tcp.psh = True
@@ -996,7 +975,6 @@ class DpiBypass:
         if t is not None and t.is_alive() and t is not threading.current_thread():
             t.join(timeout=RT_WORKER_JOIN_TIMEOUT_S)
 
-        # Дожимаем все отложенные задачи (resend_first и т.п.).
         deadline = time.monotonic() + RT_SHUTDOWN_GRACE_S
         while time.monotonic() < deadline:
             remaining = []
@@ -1018,8 +996,6 @@ class DpiBypass:
 
         with self._lock:
             w_now = self.w
-            # self.w = None здесь НЕ обнуляем — иначе _send_one в recv_thread
-            # молча дропнет последние пакеты во время дренажа.
 
         if w_now is not None:
             for state in pending_states:
@@ -1030,8 +1006,6 @@ class DpiBypass:
                         except Exception:
                             pass
 
-        # Дренаж pkt_queue: забираем всё, что recv_thread ещё не отдал,
-        # и отправляем обратно — иначе эти пакеты потеряются при остановке.
         if w_now is not None and pkt_queue is not None:
             t_end = time.monotonic() + RT_SHUTDOWN_GRACE_S
             while time.monotonic() < t_end:
@@ -1077,8 +1051,6 @@ class DpiBypass:
                 and recv_thread is not threading.current_thread()):
             recv_thread.join(timeout=RT_RECV_JOIN_TIMEOUT_S)
 
-        # Только теперь, когда все хендлы закрыты и recv_thread мёртв,
-        # обнуляем self.w — никакой _send_one уже не выполнится.
         with self._lock:
             self.w = None
 
@@ -1161,7 +1133,7 @@ class DpiBypass:
                         self._send_one(packet)
 
                 now = time.monotonic()
-                if now - last_report >= 3600.0:
+                if now - last_report >= STATS_REPORT_INTERVAL_S:
                     last_report = now
                     s = self.get_stats()
                     snapshot = (s["bypassed"], s["bytes"])
@@ -1264,7 +1236,6 @@ def cmd_test(args):
     rt = None
     rc = 0
     try:
-        # open() может упасть (нет драйвера, гонка с другим инстансом и т.п.)
         try:
             w = pydivert.WinDivert(cfg.windivert_filter)
             w.open()
