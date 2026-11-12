@@ -129,6 +129,15 @@ class TestFragmentRouting(unittest.TestCase):
 
     def test_fake_split_routes_to_fakes_and_pair(self):
         bp = self._run_mode("fake+split")
+        # 1. Проверяем, что фейк был отправлен
         bp._send_fakes.assert_called_once()
-        bp._schedule.assert_called_once() # реальный пакет отправляется по расписанию
+        # 2. Проверяем, что реальный пакет был поставлен в очередь
+        bp._schedule.assert_called_once()
+        # 3. Выполняем лямбду из _schedule вручную, чтобы проверить,
+        # что она внутри себя вызывает _send_pair (как и задумано)
+        # В MagicMock аргументы хранятся в call_args: первый - delay, второй - функция
+        scheduled_func = bp._schedule.call_args[0][1]
+        scheduled_func()
+        # 4. Теперь проверяем, что реальный пакет ушел через _send_pair
+        bp._send_pair.assert_called_once()
         bp._send_triple.assert_not_called()
