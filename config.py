@@ -94,7 +94,11 @@ IP_WHITELIST_V6 = (
 )
 
 # --- Доступные режимы обхода и позиции сплита ---
-MODES = ("split", "disorder", "fake+split", "fake+disorder")
+MODES = (
+    "split", "disorder", 
+    "triple_split", "triple_disorder",
+    "fake+split", "fake+disorder"
+)
 MODES_SPLIT = ("random", "midsld")
 
 
