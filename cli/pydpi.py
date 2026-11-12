@@ -742,7 +742,7 @@ class DpiBypass:
         sni = self._tls_sni(payload)
         if sni is not None:
             if sni[0] == "ech":
-                return ("ech", sni)
+                return ("ech", sni[1]) 
             return ("match", sni)
         if self._tls_record_incomplete(payload):
             return ("incomplete", None)
