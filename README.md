@@ -55,6 +55,8 @@
 - `python pydpi.py start --mode fake+disorder`
 - `python pydpi.py start --mode disorder --split midsld`
 - `python pydpi.py start --mode split --split random`
+- `python pydpi.py start --mode triple_split`
+- `python pydpi.py start --mode triple_disorder`
 - `python pydpi.py start --mode fake+split`
 - `python pydpi.py start --all`
 - `python pydpi.py test`
