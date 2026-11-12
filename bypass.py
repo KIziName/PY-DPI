@@ -952,7 +952,7 @@ class DpiBypass:
         return host_off + max(0, n)
 
     def _fragment_and_send(self, packet, payload, host_off, hostname):
-        """Разрезает пакет и отправляет (с опциональным добавлением фейков)."""
+         """Разрезает пакет и отправляет (с опциональным добавлением фейков или 3-way сплитом)."""
         split_at = self._split_offset_for_match(host_off, hostname)
 
         if split_at < 1:
@@ -970,28 +970,34 @@ class DpiBypass:
 
         disorder = self.mode.endswith("disorder")
         use_fake = self.mode.startswith("fake")
+        use_triple = "triple" in self.mode
 
         try:
-            if not use_fake:
-                self._send_pair(packet, first, second, seq, split_at, disorder)
+            # 1. Режимы с фейком (fake+split / fake+disorder)
+            if use_fake:
+                fake_payload = self._make_fake(payload, host_off, hostname,
+                                               self.cfg.fake_sni_tld)
+                if fake_payload is None:
+                    # Не удалось собрать фейк (слишком короткий SNI)
+                    self._send_pair(packet, first, second, seq, split_at, disorder)
+                    return
+
+                self._send_fakes(packet, fake_payload)
+                self._schedule(
+                    self.cfg.fake_split_delay_s,
+                    lambda: self._send_pair(
+                        packet, first, second, seq, split_at, disorder),
+                )
                 return
 
-            fake_payload = self._make_fake(payload, host_off, hostname,
-                                           self.cfg.fake_sni_tld)
-            if fake_payload is None:
-                # Не удалось собрать фейк (слишком короткий SNI)
-                self._send_pair(packet, first, second, seq, split_at, disorder)
+            # 2. Режимы с тройным сплитом (triple_split / triple_disorder)
+            if use_triple:
+                self._send_triple(packet, payload, host_off, hostname, seq, disorder)
                 return
 
-            self._send_fakes(packet, fake_payload)
+            # 3. Обычный сплит (split / disorder)
+            self._send_pair(packet, first, second, seq, split_at, disorder)
 
-            # Отправляем реальный пакет с задержкой (мутируем оригинал, 
-            # так как _send_pair вызывается в отдельном потоке)
-            self._schedule(
-                self.cfg.fake_split_delay_s,
-                lambda: self._send_pair(
-                    packet, first, second, seq, split_at, disorder),
-            )
         except Exception as e:
             self.log(f"frag error: {e}")
             try:
@@ -1047,6 +1053,71 @@ class DpiBypass:
         fake = bytearray(payload)
         fake[host_off:host_off + n] = rep
         return bytes(fake)
+
+    def _send_triple(self, packet, payload, host_off, hostname, seq, disorder=False):
+        """Разрезает пакет на 3 части (triple_split / triple_disorder)."""
+        h = hostname.rstrip(b".")
+        n = len(h)
+        
+        # Вычисляем две точки разрыва внутри домена
+        if n >= 3:
+            mid1 = host_off + max(1, n // 3)
+            mid2 = host_off + max(2, (2 * n) // 3)
+        else:
+            mid1 = len(payload) // 3
+            mid2 = (len(payload) * 2) // 3
+
+        # Защита, чтобы куски не были пустыми и не вылезали за границы
+        if mid1 < 1 or mid2 <= mid1 or mid2 >= len(payload) - 1:
+            # Если домен слишком короткий — откатываемся на обычный split
+            fallback_split = len(payload) // 2
+            first = payload[:fallback_split]
+            second = payload[fallback_split:]
+            self._send_pair(packet, first, second, seq, fallback_split, disorder)
+            return
+
+        first = payload[:mid1]
+        second = payload[mid1:mid2]
+        third = payload[mid2:]
+
+        if disorder:
+            # triple_disorder: отправляем 3-ю, 1-ю, затем 2-ю (с задержкой)
+            p3 = self._clone_packet(packet)
+            p3.payload = third
+            p3.tcp.seq_num = (seq + mid2) & SEQ_MASK
+            p3.tcp.psh = True
+            self._send_with_checksum(p3)
+            
+            p1 = self._clone_packet(packet)
+            p1.payload = first
+            p1.tcp.seq_num = seq
+            p1.tcp.psh = False
+            self._send_with_checksum(p1)
+
+            def resend_mid():
+                p2 = self._clone_packet(packet)
+                p2.payload = second
+                p2.tcp.seq_num = (seq + mid1) & SEQ_MASK
+                p2.tcp.psh = False
+                self._send_with_checksum(p2)
+                
+            self._schedule(self.cfg.disorder_delay_s, resend_mid)
+        else:
+            # triple_split: отправляем 1-ю, 2-ю, 3-ю по порядку
+            packet.payload = first
+            packet.tcp.seq_num = seq
+            packet.tcp.psh = False
+            self._send_with_checksum(packet)
+
+            packet.payload = second
+            packet.tcp.seq_num = (seq + mid1) & SEQ_MASK
+            packet.tcp.psh = False
+            self._send_with_checksum(packet)
+
+            packet.payload = third
+            packet.tcp.seq_num = (seq + mid2) & SEQ_MASK
+            packet.tcp.psh = True
+            self._send_with_checksum(packet)
 
     def _send_pair(self, packet, first, second, seq, split_at, disorder=False):
         """Отправляет две половины пакета (в нужном или обратном порядке)."""
