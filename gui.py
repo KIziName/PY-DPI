@@ -22,7 +22,10 @@ from helpers import is_admin, on_ui, require_admin
 
 
 class App:
+    """Главный класс графического интерфейса программы."""
+    
     def __init__(self, root):
+        """Инициализация окна, виджетов и внутренних переменных."""
         self.root = root
         root.title(APP_TITLE)
         root.geometry(UI.window_size)
@@ -158,6 +161,7 @@ class App:
     # ── Окна документации / о программе ───────────────────────────────
 
     def show_docs(self):
+        """Открывает окно с документацией (текст берется из config.py)."""
         win = tk.Toplevel(self.root)
         win.title("Документация")
         win.transient(self.root)
@@ -197,6 +201,7 @@ class App:
         win.bind("<Escape>", lambda e: win.destroy())
 
     def show_about(self):
+        """Открывает окно 'О программе' с версией и ссылкой на GitHub."""
         win = tk.Toplevel(self.root)
         win.title("О программе")
         win.transient(self.root)
@@ -250,6 +255,7 @@ class App:
     # ── Блокировка контролов ──────────────────────────────────────────
 
     def _set_controls_enabled(self, enabled):
+        """Включает или выключает элементы управления (во время работы)."""
         self._controls_enabled = enabled
         self.mode_combo.config(state="readonly" if enabled else tk.DISABLED)
         self.test_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
@@ -259,7 +265,7 @@ class App:
         self._sync_mode_state()
 
     def _sync_mode_state(self):
-        # TTL / повторы / badsum имеют смысл только в fake-режимах.
+        """Блокирует поля TTL/повторов/badsum, если выбран режим без fake."""
         if not self._controls_enabled:
             self.ttl_entry.config(state=tk.DISABLED)
             self.badsum_chk.config(state=tk.DISABLED)
@@ -276,7 +282,7 @@ class App:
         self.bypass_all_chk.config(state=tk.NORMAL)
 
     def _on_bypass_all_toggle(self):
-        # Защита от случайного включения «обхода всего».
+        """Показывает предупреждение при включении 'Обхода всего'."""
         if not self.bypass_all_var.get():
             return
         ok = messagebox.askyesno(
@@ -296,6 +302,7 @@ class App:
     # ── Закрытие окна ─────────────────────────────────────────────────
 
     def _on_close(self):
+        """Корректное завершение работы: остановка потоков, очистка, выход."""
         if self._test_running:
             try:
                 self._test_stop.set()
@@ -339,17 +346,17 @@ class App:
     # ── Лог ───────────────────────────────────────────────────────────
 
     def log(self, msg):
+        """Потокобезопасный метод добавления сообщения в лог."""
         self.log_queue.put(str(msg))
 
     def clear_log(self):
+        """Очищает окно лога."""
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete("1.0", tk.END)
         self.log_text.config(state=tk.DISABLED)
 
     def _pump_log(self):
-        # Переносим накопленные сообщения из потоко-безопасной очереди
-        # в Text. Открываем виджет один раз на весь батч, а не на
-        # каждое сообщение — иначе при большом потоке логов это тормозит UI.
+        """Переносит сообщения из очереди в UI-виджет (вызывается периодически)."""
         try:
             batch = []
             while True:
@@ -392,6 +399,7 @@ class App:
     # ── UI-очередь ────────────────────────────────────────────────────
 
     def _pump_ui(self):
+        """Выполняет отложенные UI-колбэки (из других потоков)."""
         try:
             while True:
                 try:
@@ -411,6 +419,7 @@ class App:
     # ── Строка статистики ─────────────────────────────────────────────
 
     def _update_stats(self):
+        """Обновляет нижнюю строку со статистикой скорости и пакетов."""
         try:
             b = self.bypass
             if b is not None and b.running:
@@ -450,7 +459,7 @@ class App:
 
     @require_admin(title="Тест", msg="Нужны права администратора.")
     def test_windivert(self):
-        # Проверяем, что WinDivert открывается и пакеты через него ходят.
+        """Запускает тест драйвера WinDivert (пересылка пакетов)."""
         if pydivert is None:
             messagebox.showerror("Тест", "pip install pydivert")
             return
@@ -575,6 +584,7 @@ class App:
 
     @on_ui
     def _on_test_done(self):
+        """Вызывается после завершения теста (возвращает кнопки в строй)."""
         self._test_running = False
         if self.thread is None:
             self._set_controls_enabled(True)
@@ -583,8 +593,7 @@ class App:
     # ── Проверка DNS на подмену ───────────────────────────────────────
 
     def _check_dns_async(self):
-        # Если популярные домены резолвятся в локальные IP — вероятна
-        # подмена DNS провайдером, и обход TLS не поможет.
+        """Фоновая проверка популярных доменов на подмену DNS (локальные IP)."""
         def worker():
             sample = DNS_CHECK_DOMAINS
             bad = []
@@ -621,6 +630,7 @@ class App:
     # ── Старт / стоп обхода ───────────────────────────────────────────
 
     def toggle(self):
+        """Обработчик кнопки Старт/Стоп (запуск и остановка движка)."""
         if self.thread is not None:
             self._stop_bypass()
             return
@@ -716,12 +726,14 @@ class App:
             self.status.set(f"Работаю — режим {mode}")
 
     def _reset_ui(self):
+        """Сбрасывает интерфейс в исходное состояние (после остановки)."""
         self.stats_line.set("")
         self.start_btn.config(text="▶ Старт", state=tk.NORMAL)
         self.status.set("Остановлено")
         self._set_controls_enabled(True)
 
     def _stop_bypass(self):
+        """Инициирует остановку движка с защитным таймером (watchdog)."""
         b = self.bypass
         if b is None:
             return
@@ -766,6 +778,7 @@ class App:
 
     @on_ui
     def _on_bypass_done(self, gen):
+        """Колбэк от движка: вызывается, когда поток обхода полностью завершен."""
         # Игнорируем колбэк устаревшего поколения движка.
         if gen != self._bypass_gen:
             return
@@ -782,7 +795,7 @@ class App:
     # ── Заполнение списка доменов ─────────────────────────────────────
 
     def fill_domains(self):
-        # Read-only поле: список доменов берётся из config.DEFAULT_DOMAINS.
+        """Заполняет поле 'Домены' значениями из config.DEFAULT_DOMAINS."""
         self.domains_text.config(state=tk.NORMAL)
         self.domains_text.delete("1.0", tk.END)
         self.domains_text.insert("1.0", "\n".join(DEFAULT_DOMAINS))
