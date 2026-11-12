@@ -553,8 +553,8 @@ class DpiBypass:
                 self._send_one(packet)
             return
 
-         if kind == "ech":
-             if not self._ech_logged:
+        if kind == "ech":
+            if not self._ech_logged:
                 outer = data[1].decode("ascii", "replace") if data else "?"
                 self.log(
                     f"⚠ ECH: реальный SNI зашифрован, outer SNI = {outer!r}. "
