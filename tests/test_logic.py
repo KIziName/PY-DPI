@@ -49,9 +49,10 @@ class TestContinuePending(unittest.TestCase):
         # Приходит второй кусок
         self.bp._continue_pending(self.key, pkt2, part2)
 
-        # Должен вызваться _fragment_and_send, а буфер очиститься
+        # Буфер должен очиститься, пакеты отправлены БЕЗ обхода
         self.assertNotIn(self.key, self.bp._pending)
-        self.bp._fragment_and_send.assert_called_once()
+        self.bp._flush_as_is.assert_called_once()        # отправка 1-го куска
+        self.bp._send_one.assert_called_once_with(pkt2)  # отправка 2-го куска
 
     def test_retransmission_ignored(self):
         ch = mk_client_hello()
