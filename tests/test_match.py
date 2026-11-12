@@ -3,7 +3,7 @@ import unittest
 
 from config import CRLF
 from bypass import DpiBypass
-from test_tls import mk_client_hello
+from test_tls import mk_client_hello, mk_client_hello_ech
 
 
 def mk_http(host=b"example.com"):
