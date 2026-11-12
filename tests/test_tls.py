@@ -72,7 +72,7 @@ class TestTlsRecordIncomplete(unittest.TestCase):
     def test_short_header(self):
         self.assertTrue(DpiBypass._tls_record_incomplete(b"\x16\x03"))
 
-    def mk_client_hello_ech():
+def mk_client_hello_ech():
     """ClientHello с расширением ECH (0xfe0d), но БЕЗ обычного SNI."""
     # ECH ext: type 0xfe0d, len 4, data 0000
     ech_ext = b"\xfe\x0d\x00\x04\x00\x00\x00\x00"
