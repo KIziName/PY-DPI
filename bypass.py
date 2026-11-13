@@ -621,9 +621,9 @@ class DpiBypass:
                                     or self._host_matches(hostname)):
                                 action = ("flush_send", state, packet)
                             else:
-                                # SNI размазан по пакетам. Не склеиваем,
-                                # чтобы не сломать MSS и seq.
-                                action = ("flush_as_is_and_send", state, packet)
+                                # SNI размазан по пакетам. Склеиваем и режем заново,
+                                # чтобы DPI не увидел SNI целиком.
+                                action = ("fragment_combined", state, combined, host_off, hostname)
                                 
                         elif kind == "incomplete":
                             state.buf = combined
@@ -651,6 +651,11 @@ class DpiBypass:
             case ("flush_as_is_and_send", st, pk):
                 self._flush_as_is(st)
                 self._send_one(pk)
+            case ("fragment_combined", st, comb, h_off, h_name):
+                # Берем копию первого пакета, подменяем payload на склеенный
+                p = self._clone_packet(st.packets[0])
+                p.payload = comb
+                self._fragment_and_send(p, comb, h_off, h_name)
 
     def _flush_expired(self):
         """Удаляет из буфера пакеты, не дождавшиеся продолжения (по таймауту)."""
