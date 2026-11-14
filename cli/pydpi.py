@@ -290,7 +290,7 @@ class DpiBypass:
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
         
-        self._ech_logged = set() # Множество для предотвращения спама ECH в лог
+        self._ech_logged = False # Флаг для предотвращения спама ECH в лог
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -524,13 +524,13 @@ class DpiBypass:
                 host_off, hostname = data
                 # Проверяем, нужно ли вообще обходить этот сайт
                 if self.bypass_all or self._host_matches(hostname):
-                    if hostname not in self._ech_logged:
+                    if not self._ech_logged:
                         outer = hostname.decode("ascii", "replace")
                         self.log(
                             f"⚠ ECH: outer SNI = {outer!r}. "
                             f"Режем outer SNI, чтобы DPI не блокировал."
                         )
-                        self._ech_logged.add(hostname)
+                        self._ech_logged = True
                     
                     self._fragment_and_send(packet, payload, host_off, hostname)
                     return
