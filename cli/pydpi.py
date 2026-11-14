@@ -290,7 +290,7 @@ class DpiBypass:
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
         
-        self._ech_logged = False # Флаг для предотвращения спама ECH в лог
+        self._ech_logged = set() # Множество для предотвращения спама ECH в лог
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -520,16 +520,22 @@ class DpiBypass:
             return
 
         if kind == "ech":
-            # ECH: реальный SNI зашифрован, фрагментация по SNI невозможна.
-            # Логируем один раз за сессию и пропускаем пакет как есть.
-            if not self._ech_logged:
-                outer = data[1].decode("ascii", "replace") if data else "?"
-                self.log(
-                    f"⚠ ECH: реальный SNI зашифрован, outer SNI = {outer!r}. "
-                    f"Фрагментация по SNI невозможна — пакет пропущен как есть. "
-                    f"Если сайт не открывается — попробуйте отключить ECH в браузере."
-                )
-                self._ech_logged = True
+            if data is not None:
+                host_off, hostname = data
+                # Проверяем, нужно ли вообще обходить этот сайт
+                if self.bypass_all or self._host_matches(hostname):
+                    if hostname not in self._ech_logged:
+                        outer = hostname.decode("ascii", "replace")
+                        self.log(
+                            f"⚠ ECH: outer SNI = {outer!r}. "
+                            f"Режем outer SNI, чтобы DPI не блокировал."
+                        )
+                        self._ech_logged.add(hostname)
+                    
+                    self._fragment_and_send(packet, payload, host_off, hostname)
+                    return
+                # Если сайта нет в списке — просто тихо пропускаем
+            # Если data is None (outer SNI нет) — тоже тихо пропускаем
             self._send_one(packet)
             return 
 
@@ -977,16 +983,15 @@ class DpiBypass:
         label_len = n - len(suffix)
         if label_len < 1:
             return None
-        label = bytes(
-            random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
-        )
-        result = label + suffix
-        # Защита от коллизии (x.com -> x.com)
-        if exclude is not None and result.lower() == exclude.lower():
-            first = label[0:1]
-            new_first = b"a" if first != b"a" else b"b"
-            result = new_first + label[1:] + suffix
-        return result
+            
+        while True:
+            label = bytes(
+                random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
+            )
+            result = label + suffix
+            # Защита от коллизии: если совпало — генерируем заново
+            if exclude is None or result.lower() != exclude.lower():
+                return result
 
     @staticmethod
     def _make_fake(payload, host_off, hostname, tld):
@@ -1122,6 +1127,7 @@ class DpiBypass:
                     func()
                 except Exception:
                     pass
+            time.sleep(0.001)  # отдаём CPU, если задача перепланировала новую
 
         with self._pending_lock:
             pending_states = list(self._pending.values())
