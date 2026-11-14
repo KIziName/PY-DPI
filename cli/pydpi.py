@@ -978,20 +978,22 @@ class DpiBypass:
 
     @staticmethod
     def _fake_sni(n, tld, exclude=None):
-        """Генерирует случайный SNI (гарантируя, что он не совпадет с реальным)"""
+        """Генерирует случайный SNI, гарантируя отсутствие коллизий."""
         suffix = b"." + tld
         label_len = n - len(suffix)
         if label_len < 1:
             return None
-            
-        while True:
-            label = bytes(
-                random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
-            )
-            result = label + suffix
-            # Защита от коллизии: если совпало — генерируем заново
-            if exclude is None or result.lower() != exclude.lower():
-                return result
+        label = bytes(
+            random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
+        )
+        result = label + suffix
+        # Защита от совпадения с реальным доменом (x.com -> x.com)
+        if exclude is not None and result.lower() == exclude.lower():
+            first = label[0:1]
+            new_first = b"a" if first != b"a" else b"b"
+            result = new_first + label[1:] + suffix
+
+        return result
 
     @staticmethod
     def _make_fake(payload, host_off, hostname, tld):
