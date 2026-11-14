@@ -228,7 +228,8 @@ class DpiBypass:
                     func()
                 except Exception:
                     pass
-
+            time.sleep(0.001)  # отдаём CPU, если задача перепланировала новую
+            
         with self._pending_lock:
             pending_states = list(self._pending.values())
             self._pending.clear()
@@ -519,11 +520,6 @@ class DpiBypass:
         if not payload:
             self._send_one(packet)
             return
-            
-        # Первый байт: TLS handshake (0x16) или первая буква HTTP-метода
-        if payload[0] not in _PAYLOAD_FIRST_BYTES:
-            self._send_one(packet)
-            return
 
         if self._is_dst_local(packet):
             self._send_one(packet)
@@ -531,13 +527,18 @@ class DpiBypass:
 
         key = self._conn_key(packet)
 
-        # Если для этого соединения уже есть буфер - идем в continue_pending
+        # СНАЧАЛА проверяем pending
         if key is not None:
             with self._pending_lock:
                 has_pending = key in self._pending
             if has_pending:
                 self._continue_pending(key, packet, payload)
                 return
+
+        # И только ТЕПЕРЬ проверяем первый байт
+        if payload[0] not in _PAYLOAD_FIRST_BYTES:
+            self._send_one(packet)
+            return
 
         self._dispatch_fresh(key, packet, payload)
 
@@ -554,17 +555,25 @@ class DpiBypass:
             return
 
         if kind == "ech":
-            if not self._ech_logged:
-                outer = data[1].decode("ascii", "replace") if data else "?"
-                self.log(
-                    f"⚠ ECH: реальный SNI зашифрован, outer SNI = {outer!r}. "
-                    f"Фрагментация по SNI невозможна — пакет пропущен как есть. "
-                    f"Если сайт не открывается — попробуйте отключить ECH в браузере."
-                )
-                self._ech_logged = True
+            if data is not None:
+                host_off, hostname = data
+                # Проверяем, нужно ли вообще обходить этот сайт
+                if self.bypass_all or self._host_matches(hostname):
+                    if not self._ech_logged:
+                        outer = hostname.decode("ascii", "replace")
+                        self.log(
+                            f"⚠ ECH: outer SNI = {outer!r}. "
+                            f"Режем outer SNI, чтобы DPI не блокировал."
+                        )
+                        self._ech_logged = True
+                    
+                    self._fragment_and_send(packet, payload, host_off, hostname)
+                    return
+                # Если сайта нет в списке — просто тихо пропускаем
+            # Если data is None (outer SNI нет) — тоже тихо пропускаем
             self._send_one(packet)
             return
-
+        
         if kind == "incomplete":
             # Пакет обрезан — сохраняем в буфер и ждем продолжения
             if key is not None:
@@ -850,63 +859,58 @@ class DpiBypass:
 
         record_len = _U16.unpack_from(payload, 3)[0]
         record_end = TLS_RECORD_HEADER_LEN + record_len
-        if record_end > len(payload):
-            return None
-        if record_end < TLS_MIN_CLIENTHELLO_LEN:
-            return None
+        # Не проверяем record_end > len(payload) - пакет может быть фрагментирован
 
-        # Пропускаем заголовки, версию и random
         pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
-        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > record_end:
+        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > len(payload):
             return None
         pos += TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN
 
-        if pos + 1 > record_end:
+        if pos + 1 > len(payload):
             return None
         sid_len = payload[pos]
         pos += 1 + sid_len
 
-        if pos + 2 > record_end:
+        if pos + 2 > len(payload):
             return None
         cs_len = _U16.unpack_from(payload, pos)[0]
         pos += 2 + cs_len
 
-        if pos + 1 > record_end:
+        if pos + 1 > len(payload):
             return None
         cm_len = payload[pos]
         pos += 1 + cm_len
 
-        if pos + 2 > record_end:
+        if pos + 2 > len(payload):
             return None
         ext_total_len = _U16.unpack_from(payload, pos)[0]
         pos += 2
 
         ext_end = pos + ext_total_len
-        if ext_end > record_end:
-            return None
-
         has_ech = False
         sni = None
 
-        while pos + TLS_EXT_HEADER_LEN <= ext_end:
+        # ГЛАВНЫЙ ФИКС: ограничиваем цикл реальной длиной пакета (len(payload))
+        while pos + TLS_EXT_HEADER_LEN <= len(payload) and pos < ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
             if ext_type == TLS_ECH_EXT_TYPE:
                 has_ech = True
 
             ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len
-            if ext_limit > ext_end:
-                return None
             pos += TLS_EXT_HEADER_LEN
 
             if ext_type == TLS_SNI_EXT_TYPE and sni is None:
-                if pos + 5 > ext_limit:
+                if pos + 5 > len(payload):
                     return None
                 name_type = payload[pos + 2]
                 name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
 
-                if name_type == 0 and name_len > 0 and host_off + name_len <= ext_limit:
+                # Проверяем, что имя не вылезает за реальный буфер
+                if name_type == 0 and name_len > 0:
+                    if host_off + name_len > len(payload):
+                        return None
                     sni = (host_off, payload[host_off:host_off + name_len])
 
             pos = ext_limit
