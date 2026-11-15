@@ -487,23 +487,26 @@ class DpiBypass:
             self._send_one(packet)
             return
 
-        if payload[0] not in _PAYLOAD_FIRST_BYTES:
-            self._send_one(packet)
-            return
-
         if self._is_dst_local(packet):
             self._send_one(packet)
             return
 
         key = self._conn_key(packet)
 
-        # Если для этого соединения уже есть буфер ожидания - идем туда
+        # ВАЖНО: сначала проверяем pending. Иначе продолжение
+        # фрагментированного ClientHello (payload[0] уже не 0x16/GET)
+        # вылетит отсюда как «не наш» пакет, и буфер никогда не склеится.
         if key is not None:
             with self._pending_lock:
                 has_pending = key in self._pending
             if has_pending:
                 self._continue_pending(key, packet, payload)
                 return
+
+        # И только ТЕПЕРЬ проверяем первый байт — это новый пакет соединения
+        if payload[0] not in _PAYLOAD_FIRST_BYTES:
+            self._send_one(packet)
+            return
 
         self._dispatch_fresh(key, packet, payload)
 
@@ -520,16 +523,22 @@ class DpiBypass:
             return
 
         if kind == "ech":
-            # ECH: реальный SNI зашифрован, фрагментация по SNI невозможна.
-            # Логируем один раз за сессию и пропускаем пакет как есть.
-            if not self._ech_logged:
-                outer = data[1].decode("ascii", "replace") if data else "?"
-                self.log(
-                    f"⚠ ECH: реальный SNI зашифрован, outer SNI = {outer!r}. "
-                    f"Фрагментация по SNI невозможна — пакет пропущен как есть. "
-                    f"Если сайт не открывается — попробуйте отключить ECH в браузере."
-                )
-                self._ech_logged = True
+            if data is not None:
+                host_off, hostname = data
+                # Проверяем, нужно ли вообще обходить этот сайт
+                if self.bypass_all or self._host_matches(hostname):
+                    if not self._ech_logged:
+                        outer = hostname.decode("ascii", "replace")
+                        self.log(
+                            f"⚠ ECH: outer SNI = {outer!r}. "
+                            f"Режем outer SNI, чтобы DPI не блокировал."
+                        )
+                        self._ech_logged = True
+                    
+                    self._fragment_and_send(packet, payload, host_off, hostname)
+                    return
+                # Если сайта нет в списке — просто тихо пропускаем
+            # Если data is None (outer SNI нет) — тоже тихо пропускаем
             self._send_one(packet)
             return 
 
@@ -793,78 +802,70 @@ class DpiBypass:
 
     @staticmethod
     def _tls_sni(payload):
-        """Извлекает SNI из TLS ClientHello (с поддержкой детекта ECH).
-
-        Возвращает:
-          - (host_off, hostname)  — SNI найден, ECH отсутствует;
-          - ("ech", sni_or_none)  — ECH присутствует (sni может быть None);
-          - None                  — ничего не найдено.
-        """
+        """Извлекает SNI из TLS ClientHello (с поддержкой детекта ECH)."""
         if len(payload) < TLS_MIN_CLIENTHELLO_LEN:
             return None
         if payload[0] != TLS_CONTENT_HANDSHAKE:
             return None
         if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
             return None
-        record_len = _U16.unpack_from(payload, 3)[0]
-        record_end = TLS_RECORD_HEADER_LEN + record_len
-        if record_end > len(payload):
-            return None
-        if record_end < TLS_MIN_CLIENTHELLO_LEN:
-            return None
-            
-        # Пропускаем заголовки, версию, рандом
+
+        # НЕ проверяем record_end > len(payload) — пакет может быть
+        # фрагментирован на уровне TCP, это нормально.
         pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
-        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > record_end:
+        if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > len(payload):
             return None
         pos += TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN
-        
-        if pos + 1 > record_end:
+
+        if pos + 1 > len(payload):
             return None
         sid_len = payload[pos]
         pos += 1 + sid_len
-        if pos + 2 > record_end:
+
+        if pos + 2 > len(payload):
             return None
         cs_len = _U16.unpack_from(payload, pos)[0]
         pos += 2 + cs_len
-        if pos + 1 > record_end:
+
+        if pos + 1 > len(payload):
             return None
         cm_len = payload[pos]
         pos += 1 + cm_len
-        if pos + 2 > record_end:
+
+        if pos + 2 > len(payload):
             return None
         ext_total_len = _U16.unpack_from(payload, pos)[0]
         pos += 2
+
         ext_end = pos + ext_total_len
-        if ext_end > record_end:
-            return None
-            
         has_ech = False
         sni = None
-        
-        while pos + TLS_EXT_HEADER_LEN <= ext_end:
+
+        # Ограничиваем цикл реальной длиной пакета (len(payload)),
+        # а не ext_end — иначе на фрагменте сразу вылетим по ext_limit.
+        while pos + TLS_EXT_HEADER_LEN <= len(payload) and pos < ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
             if ext_type == TLS_ECH_EXT_TYPE:
                 has_ech = True
-                
+
             ext_limit = pos + TLS_EXT_HEADER_LEN + ext_len
-            if ext_limit > ext_end:
-                return None
             pos += TLS_EXT_HEADER_LEN
-            
+
             if ext_type == TLS_SNI_EXT_TYPE and sni is None:
-                if pos + 5 > ext_limit:
+                if pos + 5 > len(payload):
                     return None
                 name_type = payload[pos + 2]
                 name_len = _U16.unpack_from(payload, pos + 3)[0]
                 host_off = pos + 5
-                if name_type == 0 and name_len > 0 and host_off + name_len <= ext_limit:
+
+                if name_type == 0 and name_len > 0:
+                    if host_off + name_len > len(payload):
+                        return None
                     sni = (host_off, payload[host_off:host_off + name_len])
-                # если name_type != 0 или name_len == 0 — просто пропускаем
-                # это расширение и продолжаем сканировать остальные
+
             pos = ext_limit
-            
+
         if has_ech:
             return ("ech", sni)
         return sni
@@ -972,7 +973,7 @@ class DpiBypass:
 
     @staticmethod
     def _fake_sni(n, tld, exclude=None):
-        """Генерирует случайный SNI (гарантируя, что он не совпадет с реальным)"""
+        """Генерирует случайный SNI, гарантируя отсутствие коллизий."""
         suffix = b"." + tld
         label_len = n - len(suffix)
         if label_len < 1:
@@ -981,11 +982,12 @@ class DpiBypass:
             random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
         )
         result = label + suffix
-        # Защита от коллизии (x.com -> x.com)
+        # Защита от совпадения с реальным доменом (x.com -> x.com)
         if exclude is not None and result.lower() == exclude.lower():
             first = label[0:1]
             new_first = b"a" if first != b"a" else b"b"
             result = new_first + label[1:] + suffix
+
         return result
 
     @staticmethod
@@ -1122,6 +1124,7 @@ class DpiBypass:
                     func()
                 except Exception:
                     pass
+            time.sleep(0.001)  # отдаём CPU, если задача перепланировала новую
 
         with self._pending_lock:
             pending_states = list(self._pending.values())

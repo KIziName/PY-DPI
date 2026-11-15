@@ -3,6 +3,7 @@ import sys
 import socket
 import traceback
 import threading
+import re
 import tkinter as tk
 import webbrowser
 import queue
@@ -19,6 +20,24 @@ from config import (
 
 from bypass import DpiBypass, _ip_is_local, pydivert
 from helpers import is_admin, on_ui, require_admin
+
+# Точные паттерны для авто-определения уровня лога.
+# \b работает с кириллицей благодаря Unicode по умолчанию в re.
+_ERROR_RE = re.compile(r"(❌|\bошибка\b|\berror\b|^!!)", re.IGNORECASE)
+_WARN_RE = re.compile(r"(⚠|\bне\s+удалось\b|\bне\s+завершил)", re.IGNORECASE)
+_SUCCESS_RE = re.compile(
+    r"(\bок\b|\bготов\b|\bзапущен\b|\bда\b|\bзавершён\b)", re.IGNORECASE)
+
+
+def _guess_level(msg: str):
+    """Эвристика для log() без явного level. Возвращает tag или None."""
+    if _ERROR_RE.search(msg):
+        return "error"
+    if _WARN_RE.search(msg):
+        return "warning"
+    if _SUCCESS_RE.search(msg):
+        return "success"
+    return None
 
 
 class App:
@@ -345,9 +364,12 @@ class App:
 
     # ── Лог ───────────────────────────────────────────────────────────
 
-    def log(self, msg):
-        """Потокобезопасный метод добавления сообщения в лог."""
-        self.log_queue.put(str(msg))
+    def log(self, msg, level=None):
+        """Потокобезопасный метод добавления сообщения в лог.
+
+        level: None (авто-эвристика) | 'error' | 'warning' | 'success'.
+        """
+        self.log_queue.put((str(msg), level))
 
     def clear_log(self):
         """Очищает окно лога."""
@@ -368,20 +390,17 @@ class App:
             if batch:
                 self.log_text.config(state=tk.NORMAL)
                 try:
-                    for msg in batch:
-                        # Определяем цвет в зависимости от текста
-                        tag = None
-                        if "❌" in msg or "ОШИБКА" in msg or "Ошибка" in msg:
-                            tag = "error"
-                        elif "⚠" in msg:
-                            tag = "warning"
-                        elif "ОК" in msg or "ДА" in msg or "Запущен" in msg or "Готов" in msg:
-                            tag = "success"
-        
+                    for item in batch:
+                        # Совместимость: если кто-то положил в очередь голую строку.
+                        if isinstance(item, tuple):
+                            msg, level = item
+                        else:
+                            msg, level = item, None
+                        tag = level if level is not None else _guess_level(msg)
                         self.log_text.insert(
                             tk.END,
                             f"[{time.strftime('%H:%M:%S')}] {msg}\n", tag)
-                        
+
                     total = int(
                         self.log_text.index("end-1c").split(".")[0]) - 1
                     if total > UI.max_log_lines:
