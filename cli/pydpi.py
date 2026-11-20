@@ -32,7 +32,7 @@ except ImportError:
 
 
 APP_TITLE = "PY-DPI"
-APP_VERSION = "V1.4.2-CLI"
+APP_VERSION = "V1.5-CLI"
 
 PORT_HTTP = 80
 PORT_HTTPS = 443
