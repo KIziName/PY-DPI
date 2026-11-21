@@ -19,6 +19,10 @@ import ssl
 from dataclasses import dataclass, replace
 
 # Проверка версии Python
+if sys.version_info < (3, 10):
+    print("КРИТИЧЕСКАЯ ОШИБКА: Для работы PY-DPI требуется Python 3.10 или выше!", file=sys.stderr)
+    sys.exit(1) # Мгновенный выход
+
 if sys.version_info < (3, 11):
     print(
         f"!! PY-DPI: рекомендуется Python 3.11+ "
