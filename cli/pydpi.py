@@ -13,6 +13,8 @@ import sys
 import threading
 import time
 import traceback
+import subprocess
+import ssl
 
 from dataclasses import dataclass, replace
 
@@ -136,7 +138,7 @@ class DpiConfig:
 
 # Таймауты и лимиты потоков
 RT_SHUTDOWN_GRACE_S = 1.0
-RT_PACKET_QUEUE_MAX = 5000
+RT_PACKET_QUEUE_MAX = 7000
 RT_WORKER_JOIN_TIMEOUT_S = 1.5
 RT_RECV_JOIN_TIMEOUT_S = 1.0
 RT_QUEUE_GET_TIMEOUT_S = 0.2
@@ -148,13 +150,10 @@ RT_WORKER_MIN_WAIT_S = 0.001
 
 # Список доменов по умолчанию
 DEFAULT_DOMAINS = (
-    # ── Meta ──────────────────────────────────────
     "facebook.com", "fbcdn.net", "fb.com", "fbsbx.com", "fb.watch",
     "messenger.com", "m.me", "facebook.net",
     "instagram.com", "cdninstagram.com", "threads.net",
     "whatsapp.com", "whatsapp.net", "wa.me",
-
-    # ── X / Twitter ───────────────────────────────
     "twitter.com", "x.com", "twimg.com", "t.co",
     "twttr.com", "twttr.net", "twvid.com", "tweetdeck.com",
     "twittercommunity.com", "twitteroauth.com", "twtrdns.net",
@@ -162,23 +161,17 @@ DEFAULT_DOMAINS = (
     "twitter.biz", "twitter.jp", "twitterinc.com", "twitterstat.us",
     "periscope.tv", "pscp.tv", "vine.co", "twitpic.com",
     "tellapart.com", "twitterflightschool.com",
-
-    # ── Discord ───────────────────────────────────
     "discord.com", "discordapp.com", "discordapp.net", "discord.gg",
     "discord.media", "discordactivities.com", "discord.new", "discord.gift",
     "dis.gd", "discord.co", "discord.design", "discord.dev",
     "discord.gifts", "discord.store", "discord.tools",
     "discordmerch.com", "discordpartygames.com",
     "discord-activities.com", "discordsays.com",
-
-    # ── Telegram ──────────────────────────────────
     "telegram.org", "t.me", "telegram.me", "telegra.ph", "telesco.pe",
     "cdn-telegram.org", "telegram-cdn.org", "tdesktop.com",
     "telega.one", "telegram.dog", "telegram.space", "tx.me",
     "fragment.com", "comments.app", "contest.com", "graph.org",
     "quiz.directory", "tg.dev", "usercontent.dev", "ton.org",
-
-    # ── YouTube / Google ──────────────────────────
     "youtube.com", "youtu.be", "googlevideo.com", "ytimg.com",
     "youtubemusic.com", "yt.be", "ggpht.com",
     "youtubei.googleapis.com", "youtube.googleapis.com",
@@ -187,36 +180,24 @@ DEFAULT_DOMAINS = (
     "youtubeembeddedplayer.googleapis.com", "youtube-ui.l.google.com",
     "yt-video-upload.l.google.com", "jnn-pa.googleapis.com",
     "returnyoutubedislikeapi.com",
-
-    # ── TikTok ────────────────────────────────────
     "tiktok.com", "tiktokcdn.com", "tiktokv.com", "byteoversea.com",
     "ibytedtos.com", "muscdn.com", "musical.ly", "tik-tokapi.com",
     "tiktokcdn-us.com", "tiktokcdn-eu.com", "tiktokd.net", "tiktokd.org",
     "tiktokv.us", "tiktokv.eu", "tiktokw.us", "ttwstatic.com",
-
-    # ── Anime Online (RU) ─────────────────────────
     "jut.su", "jut-su.net", "animego.org", "amedia.site", "yummyani.me",
     "kara.su", "animebest.org", "animedia.tv", "animespirit.ru",
     "sovetromantica.com", "adultmult.tv", "anilibria.tv", "anilibria.uno",
     "anilibria.org", "anilibria.wtf", "anilib.me", "anistars.ru",
     "anistar.org", "animaunt.org", "anime-portal.su", "shiza-project.com",
-
-    # ── Snapchat ──────────────────────────────────
     "snapchat.com", "snap.com", "sc-cdn.net", "sc-gw.com",
     "bitmoji.com", "bitstrips.com", "snapkit.com", "snap-dev.net",
-    
-    # ── Dev / GitHub ──────────────────────────────
     "github.com", "githubusercontent.com", "githubassets.com",
     "github.io", "githubapp.com", "githubstatus.com", "ghcr.io",
-
-    # ── Tor / Signal ──────────────────────────────
     "torproject.org", "torproject.net", "tor.eff.org",
     "gettor.me", "onion.link", "onion.ws", "onion.pet",
     "meek.azureedge.net",
     "signal.org", "whispersystems.org", "signal.art",
     "signal.group", "signal.me", "signal.tube", "signalcdn.org",
-    
-    # ── Торренты ──────────────────────────────────
     "rutracker.org", "rutracker.net", "rutracker.ru", "rutracker.cc",
     "rutrk.org", "static.rutracker.org", "api.rutracker.org",
 )
@@ -290,7 +271,7 @@ class DpiBypass:
         self._send_has_recalc = None
         self._send_lock = threading.Lock()
         
-        self._ech_logged = False # Флаг для предотвращения спама ECH в лог
+        self._ech_logged = False
 
         self._pending = {}
         self._pending_lock = threading.RLock()
@@ -311,12 +292,10 @@ class DpiBypass:
         }
 
     def _mark_bypassed(self, nbytes):
-        """Увеличивает счетчики обойденных пакетов"""
         self.packets_bypassed += 1
         self.bytes_bypassed += nbytes
 
     def _schedule(self, delay, func):
-        """Добавляет задачу в очередь с задержкой (min-heap)"""
         with self._pq_cond:
             self._pq_seq += 1
             heapq.heappush(self._pq,
@@ -324,7 +303,6 @@ class DpiBypass:
             self._pq_cond.notify()
 
     def _worker_loop(self):
-        """Фоновый поток для выполнения отложенных задач (disorder) и таймаутов"""
         last_flush = time.monotonic()
         while not self._stop_event.is_set():
             due = []
@@ -339,7 +317,6 @@ class DpiBypass:
                 except Exception:
                     pass
 
-            # Очистка зависших pending-пакетов
             now = time.monotonic()
             if now - last_flush >= self.cfg.pending_flush_interval_s:
                 last_flush = now
@@ -361,7 +338,6 @@ class DpiBypass:
                 self._pq_cond.wait(max(wait, RT_WORKER_MIN_WAIT_S))
 
     def stop(self):
-        """Сигнал остановки"""
         if self._stop_event.is_set():
             return
         self._stop_event.set()
@@ -369,7 +345,6 @@ class DpiBypass:
             self._pq_cond.notify_all()
 
     def _send_one(self, packet):
-        """Отправка одного пакета с проверкой версии pydivert"""
         with self._lock:
             w = self.w
         if w is None:
@@ -384,7 +359,6 @@ class DpiBypass:
                     pass
                 return
 
-            # Пытаемся отправить без пересчета чексуммы (быстрее)
             try:
                 w.send(packet, recalculate_checksum=False)
                 if state is None:
@@ -406,7 +380,6 @@ class DpiBypass:
                     self.log("send: старая версия pydivert, работаю в совместимом режиме, рекомендовано (pip install --upgrade pydivert)")
 
     def _send_with_checksum(self, packet):
-        """Пересчитывает чексумму и отправляет"""
         try:
             packet.recalculate_checksums()
         except Exception:
@@ -414,7 +387,6 @@ class DpiBypass:
         self._send_one(packet)
 
     def _send_badsum(self, packet):
-        """Намеренно портит чексумму (для фейк-пакетов)"""
         try:
             packet.recalculate_checksums()
         except Exception:
@@ -434,7 +406,6 @@ class DpiBypass:
 
     @staticmethod
     def _clone_packet(packet):
-        """Глубокая копия пакета для модификации"""
         try:
             return pydivert.Packet(bytes(packet.raw), packet.interface,
                                    packet.direction)
@@ -443,7 +414,6 @@ class DpiBypass:
 
     @staticmethod
     def _conn_key(packet):
-        """Уникальный ключ соединения (src_ip, src_port, dst_ip, dst_port)"""
         tcp = packet.tcp
         if tcp is None:
             return None
@@ -457,7 +427,6 @@ class DpiBypass:
 
     @staticmethod
     def _is_dst_local(packet):
-        """Проверка, не является ли получатель локальным IP"""
         if packet.ipv4 is not None:
             return _ip_is_local(packet.ipv4.dst_addr, True)
         if packet.ipv6 is not None:
@@ -465,13 +434,11 @@ class DpiBypass:
         return False
 
     def process(self, packet):
-        """Главная точка входа обработки каждого перехваченного пакета"""
         if self._stop_event.is_set():
             self._send_one(packet)
             return
 
         if packet.tcp is None:
-            # Блокируем UDP 443 (QUIC), чтобы браузер перешел на TCP
             if packet.udp is not None and self.cfg.block_quic:
                 if not self._is_dst_local(packet):
                     try:
@@ -493,9 +460,6 @@ class DpiBypass:
 
         key = self._conn_key(packet)
 
-        # ВАЖНО: сначала проверяем pending. Иначе продолжение
-        # фрагментированного ClientHello (payload[0] уже не 0x16/GET)
-        # вылетит отсюда как «не наш» пакет, и буфер никогда не склеится.
         if key is not None:
             with self._pending_lock:
                 has_pending = key in self._pending
@@ -503,7 +467,6 @@ class DpiBypass:
                 self._continue_pending(key, packet, payload)
                 return
 
-        # И только ТЕПЕРЬ проверяем первый байт — это новый пакет соединения
         if payload[0] not in _PAYLOAD_FIRST_BYTES:
             self._send_one(packet)
             return
@@ -511,7 +474,6 @@ class DpiBypass:
         self._dispatch_fresh(key, packet, payload)
 
     def _dispatch_fresh(self, key, packet, payload):
-        """Обработка нового (первого в соединении) пакета"""
         kind, data = self._detect_host(payload)
 
         if kind == "match":
@@ -525,7 +487,6 @@ class DpiBypass:
         if kind == "ech":
             if data is not None:
                 host_off, hostname = data
-                # Проверяем, нужно ли вообще обходить этот сайт
                 if self.bypass_all or self._host_matches(hostname):
                     if not self._ech_logged:
                         outer = hostname.decode("ascii", "replace")
@@ -537,13 +498,10 @@ class DpiBypass:
                     
                     self._fragment_and_send(packet, payload, host_off, hostname)
                     return
-                # Если сайта нет в списке — просто тихо пропускаем
-            # Если data is None (outer SNI нет) — тоже тихо пропускаем
             self._send_one(packet)
             return 
 
         if kind == "incomplete":
-            # Пакет обрезан (нужно больше данных) - кидаем в буфер
             if key is not None:
                 with self._pending_lock:
                     self._pending[key] = PendingState(
@@ -556,7 +514,6 @@ class DpiBypass:
         self._send_one(packet)
 
     def _continue_pending(self, key, packet, payload):
-        """Обработка пакетов, для которых уже есть буфер (склейка)"""
         action = None
         with self._pending_lock:
             state = self._pending.get(key)
@@ -569,20 +526,17 @@ class DpiBypass:
                 if seq != expected_seq:
                     delta = (seq - expected_seq) & SEQ_MASK
                     if delta > SEQ_HALF:
-                        # Ретрансмит (дубликат) - игнорируем или шлем
                         rel = (seq - state.first_seq) & SEQ_MASK
                         if rel + len(payload) <= len(state.buf):
                             return
                         action = ("send", packet)
                     else:
-                        # Разрыв последовательности
                         del self._pending[key]
                         action = ("flush_fresh", state, key, packet, payload)
                 else:
                     combined = state.buf + payload
                     if (len(combined) > self.cfg.pending_max_bytes
                             or len(state.packets) >= self.cfg.pending_max_packets):
-                        # Переполнение буфера
                         del self._pending[key]
                         action = ("flush_fresh", state, key, packet, payload)
                     else:
@@ -594,8 +548,6 @@ class DpiBypass:
                                     or self._host_matches(hostname)):
                                 action = ("flush_send", state, packet)
                             else:
-                                # SNI размазан по пакетам. Склеиваем и режем заново,
-                                # чтобы DPI не увидел SNI целиком.
                                 action = ("fragment_combined", state, combined, host_off, hostname)
                                 
                         elif kind == "incomplete":
@@ -624,13 +576,11 @@ class DpiBypass:
                 self._flush_as_is(st)
                 self._send_one(pk)
             case ("fragment_combined", st, comb, h_off, h_name):
-                # Берем копию первого пакета, подменяем payload на склеенный
                 p = self._clone_packet(st.packets[0])
                 p.payload = comb
                 self._fragment_and_send(p, comb, h_off, h_name)
                 
     def _flush_expired(self):
-        """Удаляет старые пакеты из буфера по таймауту"""
         if self._stop_event.is_set():
             return
         with self._pending_lock:
@@ -644,13 +594,11 @@ class DpiBypass:
             self._flush_as_is(state)
 
     def _flush_as_is(self, state):
-        """Отправляет пакеты из буфера без модификации"""
         for p in state.packets:
             self._send_one(p)
 
     @staticmethod
     def _is_tls_clienthello_start(payload):
-        """Проверка, что пакет - это начало TLS ClientHello"""
         if len(payload) < TLS_RECORD_HEADER_LEN + 1:
             return False
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -661,7 +609,6 @@ class DpiBypass:
 
     @staticmethod
     def _tls_record_incomplete(payload):
-        """Проверка, обрезан ли TLS-пакет"""
         if len(payload) < TLS_RECORD_HEADER_LEN:
             return True
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -671,7 +618,6 @@ class DpiBypass:
 
     @staticmethod
     def _is_http_request_start(payload):
-        """Проверка, что пакет - начало HTTP-запроса (GET, POST и т.д.)"""
         if not payload:
             return False
         for m in HTTP_METHODS:
@@ -683,7 +629,6 @@ class DpiBypass:
 
     @staticmethod
     def _is_http_request_partial(payload):
-        """Проверка, является ли пакет частью HTTP-метода (обрезан)"""
         if not payload:
             return False
         if len(payload) > _HTTP_METHOD_MAX_LEN:
@@ -695,7 +640,6 @@ class DpiBypass:
 
     @staticmethod
     def _http_host(payload):
-        """Поиск заголовка Host в HTTP-запросе"""
         if not payload:
             return None
         first_line_end = payload.find(CRLF)
@@ -726,12 +670,10 @@ class DpiBypass:
                     value_end -= 1
                 host_bytes = payload[value_start:value_end]
                 if host_bytes.startswith(b"["):
-                    # IPv6
                     close = host_bytes.find(b"]")
                     if close >= 0:
                         host_bytes = host_bytes[:close + 1]
                 else:
-                    # Отрезаем порт, если есть
                     sep = host_bytes.find(HOST_PORT_SEP)
                     if sep >= 0:
                         host_bytes = host_bytes[:sep]
@@ -742,7 +684,6 @@ class DpiBypass:
         return None
 
     def _detect_host(self, payload):
-        """Определяет тип пакета и извлекает имя домена"""
         if not payload:
             return ("none", None)
         if payload[0] == TLS_CONTENT_HANDSHAKE:
@@ -753,7 +694,6 @@ class DpiBypass:
         return ("none", None)
 
     def _detect_tls(self, payload):
-        """Парсинг TLS на наличие SNI или ECH"""
         if len(payload) < TLS_RECORD_HEADER_LEN + 1:
             return ("incomplete", None)
         if not self._is_tls_clienthello_start(payload):
@@ -768,7 +708,6 @@ class DpiBypass:
         return ("none", None)
 
     def _detect_http(self, payload):
-        """Парсинг HTTP на наличие заголовка Host"""
         if self._is_http_request_partial(payload):
             return ("incomplete", None)
         if not self._is_http_request_start(payload):
@@ -785,14 +724,12 @@ class DpiBypass:
         return ("none", None)
 
     def _host_matches(self, host):
-        """Проверяет, есть ли домен (или его поддомен) в списке обхода"""
         domains = self.domains
         if host in domains:
             return True
         h = host.rstrip(b".").lower()
         if h in domains:
             return True
-        # Проверка поддоменов
         idx = h.find(b".")
         while idx >= 0:
             if h[idx + 1:] in domains:
@@ -802,7 +739,6 @@ class DpiBypass:
 
     @staticmethod
     def _tls_sni(payload):
-        """Извлекает SNI из TLS ClientHello (с поддержкой детекта ECH)."""
         if len(payload) < TLS_MIN_CLIENTHELLO_LEN:
             return None
         if payload[0] != TLS_CONTENT_HANDSHAKE:
@@ -810,8 +746,6 @@ class DpiBypass:
         if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
             return None
 
-        # НЕ проверяем record_end > len(payload) — пакет может быть
-        # фрагментирован на уровне TCP, это нормально.
         pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
         if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > len(payload):
             return None
@@ -841,8 +775,6 @@ class DpiBypass:
         has_ech = False
         sni = None
 
-        # Ограничиваем цикл реальной длиной пакета (len(payload)),
-        # а не ext_end — иначе на фрагменте сразу вылетим по ext_limit.
         while pos + TLS_EXT_HEADER_LEN <= len(payload) and pos < ext_end:
             ext_type = _U16.unpack_from(payload, pos)[0]
             ext_len = _U16.unpack_from(payload, pos + 2)[0]
@@ -872,7 +804,6 @@ class DpiBypass:
 
     @staticmethod
     def _midsld_offset(hostname):
-        """Вычисляет середину домена второго уровня (SLD)"""
         hostname = hostname.rstrip(b".")
         n = len(hostname)
         if n < 3:
@@ -894,7 +825,6 @@ class DpiBypass:
         return mid
 
     def _split_offset_for_match(self, host_off, hostname):
-        """Определяет индекс байта, по которому нужно разрезать пакет"""
         h = hostname.rstrip(b".")
         mode = self.cfg.split_pos
         if mode == "midsld":
@@ -907,7 +837,6 @@ class DpiBypass:
         return host_off + max(0, n)
 
     def _fragment_and_send(self, packet, payload, host_off, hostname):
-        """Разрезает пакет и отправляет (с добавлением фейка или 3-way сплитом, если нужно)"""
         split_at = self._split_offset_for_match(host_off, hostname)
         if split_at < 1:
             split_at = 1
@@ -926,7 +855,6 @@ class DpiBypass:
         use_triple = "triple" in self.mode
 
         try:
-            # 1. Режимы с фейком (fake+split / fake+disorder)
             if use_fake:
                 fake_payload = self._make_fake(payload, host_off, hostname,
                                self.cfg.fake_sni_tld)
@@ -940,12 +868,10 @@ class DpiBypass:
                 )
                 return
 
-            # 2. Режимы с тройным сплитом (triple_split / triple_disorder)
             if use_triple:
                 self._send_triple(packet, payload, host_off, hostname, seq, disorder)
                 return
 
-            # 3. Обычный сплит (split / disorder)
             self._send_pair(packet, first, second, seq, split_at, disorder)
 
         except Exception as e:
@@ -956,7 +882,6 @@ class DpiBypass:
                 pass
 
     def _send_fakes(self, packet, fake_payload):
-        """Отправляет N фейковых пакетов с низким TTL"""
         repeats = max(1, int(self.cfg.fake_repeats))
         for _ in range(repeats):
             fake = self._clone_packet(packet)
@@ -973,7 +898,6 @@ class DpiBypass:
 
     @staticmethod
     def _fake_sni(n, tld, exclude=None):
-        """Генерирует случайный SNI, гарантируя отсутствие коллизий."""
         suffix = b"." + tld
         label_len = n - len(suffix)
         if label_len < 1:
@@ -982,7 +906,6 @@ class DpiBypass:
             random.choices(b"abcdefghijklmnopqrstuvwxyz", k=label_len)
         )
         result = label + suffix
-        # Защита от совпадения с реальным доменом (x.com -> x.com)
         if exclude is not None and result.lower() == exclude.lower():
             first = label[0:1]
             new_first = b"a" if first != b"a" else b"b"
@@ -992,7 +915,6 @@ class DpiBypass:
 
     @staticmethod
     def _make_fake(payload, host_off, hostname, tld):
-        """Подменяет реальный SNI на фейковый в копии пакета"""
         n = len(hostname)
         if n == 0:
             return None
@@ -1004,11 +926,9 @@ class DpiBypass:
         return bytes(fake)
 
     def _send_triple(self, packet, payload, host_off, hostname, seq, disorder=False):
-        """Разрезает пакет на 3 части (triple_split / triple_disorder)."""
         h = hostname.rstrip(b".")
         n = len(h)
         
-        # Вычисляем две точки разрыва внутри домена
         if n >= 3:
             mid1 = host_off + max(1, n // 3)
             mid2 = host_off + max(2, (2 * n) // 3)
@@ -1016,7 +936,6 @@ class DpiBypass:
             mid1 = len(payload) // 3
             mid2 = (len(payload) * 2) // 3
 
-        # Защита от слишком коротких пакетов
         if mid1 < 1 or mid2 <= mid1 or mid2 >= len(payload) - 1:
             fallback_split = len(payload) // 2
             first = payload[:fallback_split]
@@ -1029,7 +948,6 @@ class DpiBypass:
         third = payload[mid2:]
 
         if disorder:
-            # triple_disorder: отправляем 3-ю, 1-ю, затем 2-ю (с задержкой)
             p3 = self._clone_packet(packet)
             p3.payload = third
             p3.tcp.seq_num = (seq + mid2) & SEQ_MASK
@@ -1051,7 +969,6 @@ class DpiBypass:
                 
             self._schedule(self.cfg.disorder_delay_s, resend_mid)
         else:
-            # triple_split: отправляем 1-ю, 2-ю, 3-ю по порядку
             packet.payload = first
             packet.tcp.seq_num = seq
             packet.tcp.psh = False
@@ -1068,9 +985,7 @@ class DpiBypass:
             self._send_with_checksum(packet)
 
     def _send_pair(self, packet, first, second, seq, split_at, disorder=False):
-        """Отправляет две половины пакета (в правильном или обратном порядке)"""
         if disorder:
-            # Сначала вторая половина, потом первая
             p2 = self._clone_packet(packet)
             p2.payload = second
             p2.tcp.seq_num = (seq + split_at) & SEQ_MASK
@@ -1085,7 +1000,6 @@ class DpiBypass:
 
             self._schedule(self.cfg.disorder_delay_s, resend_first)
         else:
-            # Отправляем по порядку, мутируя оригинальный пакет
             packet.payload = first
             packet.tcp.seq_num = seq
             packet.tcp.psh = False
@@ -1097,7 +1011,6 @@ class DpiBypass:
             self._send_with_checksum(packet)
 
     def _shutdown(self, w, pkt_queue, recv_thread):
-        """Корректная остановка всех потоков и освобождение WinDivert"""
         with self._lock:
             self._shutting_down = True
         self._stop_event.set()
@@ -1109,7 +1022,6 @@ class DpiBypass:
         if t is not None and t.is_alive() and t is not threading.current_thread():
             t.join(timeout=RT_WORKER_JOIN_TIMEOUT_S)
 
-        # Выполняем оставшиеся задачи в очереди
         deadline = time.monotonic() + RT_SHUTDOWN_GRACE_S
         while time.monotonic() < deadline:
             remaining = []
@@ -1124,7 +1036,7 @@ class DpiBypass:
                     func()
                 except Exception:
                     pass
-            time.sleep(0.001)  # отдаём CPU, если задача перепланировала новую
+            time.sleep(0.001)
 
         with self._pending_lock:
             pending_states = list(self._pending.values())
@@ -1133,7 +1045,6 @@ class DpiBypass:
         with self._lock:
             w_now = self.w
 
-        # Отправляем всё, что осталось в буфере
         if w_now is not None:
             for state in pending_states:
                 for p in state.packets:
@@ -1143,7 +1054,6 @@ class DpiBypass:
                         except Exception:
                             pass
 
-        # Дренаж очереди пакетов
         if w_now is not None and pkt_queue is not None:
             t_end = time.monotonic() + RT_SHUTDOWN_GRACE_S
             while time.monotonic() < t_end:
@@ -1201,7 +1111,6 @@ class DpiBypass:
                 pass
 
     def run(self):
-        """Главный цикл работы движка"""
         pkt_queue = queue.Queue(maxsize=RT_PACKET_QUEUE_MAX)
         recv_thread = None
         w = None
@@ -1231,7 +1140,6 @@ class DpiBypass:
                 return
 
             def _receiver():
-                """Поток приема пакетов от WinDivert"""
                 try:
                     while not self._stop_event.is_set():
                         try:
@@ -1296,7 +1204,6 @@ class DpiBypass:
 # --- CLI ФУНКЦИИ ---
 
 def load_domains(args):
-    """Загружает список доменов из файла или берет дефолтные"""
     domains = set() if args.no_defaults else set(DEFAULT_DOMAINS)
     if args.domains_file:
         try:
@@ -1311,7 +1218,6 @@ def load_domains(args):
 
 
 def build_config(args):
-    """Собирает конфиг на основе аргументов командной строки"""
     return replace(
         DpiConfig(),
         fake_ttl=args.ttl,
@@ -1322,7 +1228,6 @@ def build_config(args):
 
 
 def cmd_list_modes(_args):
-    """Выводит справку по режимам"""
     print("Режимы:", ", ".join(MODES))
     print("Split: ", ", ".join(MODES_SPLIT))
     print(f"TTL:   {TTL_MIN}..{TTL_MAX}")
@@ -1334,8 +1239,8 @@ def cmd_list_modes(_args):
     print("  pydpi.py start --mode triple_split")
     print("  pydpi.py start --mode disorder --all")
     print("  pydpi.py start --domains-file my_domains.txt")
-    print("  pydpi.py test")
-    print("  pydpi.py dns")
+    print("  pydpi.py auto")
+    print("  pydpi.py diagnose")
 
 
 def cmd_dns(_args):
@@ -1363,6 +1268,199 @@ def cmd_dns(_args):
         print("Не удалось разрешить ни один домен.")
     else:
         print(f"OK: {resolved}/{len(DNS_CHECK_DOMAINS)} резолвятся нормально.")
+
+
+def cmd_diagnose(_args):
+    """Полная диагностика (как в GUI)"""
+    print("=== Запуск диагностики ===")
+    
+    # 1. Права
+    print("Шаг 1: Проверка прав администратора...")
+    if is_admin():
+        print("✅ Права администратора: ДА")
+    else:
+        print("❌ Права администратора: НЕТ")
+        print("   Запустите программу от имени администратора!")
+        return 1
+        
+    # 2. pydivert
+    print("\nШаг 2: Проверка библиотеки pydivert...")
+    if pydivert is None:
+        print("❌ pydivert НЕ УСТАНОВЛЕН")
+        print("   Выполните: pip install pydivert")
+        return 1
+    else:
+        print("✅ pydivert: OK")
+        
+    # 3. DNS
+    print("\nШаг 3: Проверка подмены DNS...")
+    bad_dns = []
+    resolved = 0
+    for d in DNS_CHECK_DOMAINS:
+        try:
+            ip = socket.gethostbyname(d)
+            resolved += 1
+            if _ip_is_local(ip, True):
+                bad_dns.append((d, ip))
+        except Exception:
+            pass
+            
+    if bad_dns:
+        for d, ip in bad_dns:
+            print(f"⚠ {d} -> {ip} (похоже на подмену DNS)")
+        print("⚠ Смените DNS на 8.8.8.8 или 1.1.1.1")
+    elif resolved == 0:
+        print("⚠ Не удалось разрешить ни один домен (проверьте интернет)")
+    else:
+        print(f"✅ DNS работает нормально ({resolved}/{len(DNS_CHECK_DOMAINS)})")
+        
+    # 4. Firewall
+    print("\nШаг 4: Проверка брандмауэра Windows...")
+    try:
+        res = subprocess.run(
+            ['netsh', 'advfirewall', 'show', 'allprofiles'],
+            capture_output=True, text=True, encoding='cp866', errors='ignore',
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        out = res.stdout.upper()
+        if "ON" in out or "ВКЛ" in out:
+            print("⚠ Брандмауэр Windows включен.")
+            print("   Если обход не работает, разрешите Python и PY-DPI в брандмауэре.")
+        else:
+            print("✅ Брандмауэр Windows выключен (или не блокирует).")
+    except Exception as e:
+        print(f"ℹ Не удалось проверить брандмауэр: {e}")
+        
+    # 5. WinDivert
+    print(f"\nШаг 5: Тест драйвера WinDivert ({RT_TEST_DURATION_S} сек)...")
+    cfg = DpiConfig()
+    stop_ev = threading.Event()
+    recv_q = queue.Queue(maxsize=RT_PACKET_QUEUE_MAX)
+    n = 0
+    w = None
+    try:
+        w = pydivert.WinDivert(cfg.windivert_filter)
+        w.open()
+    except Exception as e:
+        print(f"❌ Ошибка открытия WinDivert: {e}")
+        return 1
+        
+    print("Драйвер открыт. Пересылаю пакеты...")
+    
+    def receiver():
+        while not stop_ev.is_set():
+            try:
+                p = w.recv()
+            except Exception:
+                return
+            try:
+                recv_q.put(p, timeout=0.3)
+            except queue.Full:
+                try: w.send(p)
+                except: return
+                
+    rt = threading.Thread(target=receiver, daemon=True)
+    rt.start()
+    
+    t0 = time.time()
+    while time.time() - t0 < RT_TEST_DURATION_S:
+        try:
+            p = recv_q.get(timeout=0.2)
+            w.send(p)
+            n += 1
+        except queue.Empty:
+            continue
+        except Exception:
+            pass
+            
+    stop_ev.set()
+    while True:
+        try:
+            p = recv_q.get_nowait()
+            w.send(p)
+            n += 1
+        except queue.Empty:
+            break
+        except Exception:
+            pass
+            
+    try: w.close()
+    except: pass
+    
+    if n > 0:
+        print(f"✅ Тест пройден: успешно переслано {n} пакетов")
+    else:
+        print("⚠ Тест завершен, но переслано 0 пакетов. Нет трафика?")
+        
+    print("\n=== Диагностика завершена ===")
+    return 0
+
+
+def cmd_auto(args):
+    """Авто-подбор режима (как в GUI)"""
+    if pydivert is None:
+        print("!! pydivert не установлен")
+        return 2
+    if not is_admin():
+        print("!! Нужны права администратора.")
+        return 1
+
+    print("=== Запуск авто-подбора ===")
+    print("⚠ Не используйте браузер во время теста\n")
+
+    modes = ["split", "disorder", "triple_split", "triple_disorder", "fake+split", "fake+disorder"]
+    results = {}
+    target_host = "youtube.com"
+    test_domains = ["youtube.com", "googlevideo.com"]
+    
+    cfg = DpiConfig()
+    start_mode = modes[0]
+    engine = DpiBypass(domains=test_domains, mode=start_mode, log_cb=lambda x: None, config=cfg)
+    
+    t = threading.Thread(target=engine.run, daemon=True)
+    t.start()
+    
+    print("Инициализация драйвера WinDivert...")
+    time.sleep(2.0)
+    
+    try:
+        for mode in modes:
+            print(f"Тестирую режим: {mode}...")
+            engine.mode = mode
+            time.sleep(0.5)
+            
+            success = False
+            elapsed = 99.0
+            
+            try:
+                t0 = time.time()
+                context = ssl.create_default_context()
+                with socket.create_connection((target_host, 443), timeout=4) as sock:
+                    with context.wrap_socket(sock, server_hostname=target_host):
+                        success = True
+                        elapsed = time.time() - t0
+            except Exception:
+                success = False
+                
+            if success:
+                print(f"✅ {mode} работает! (Время: {elapsed:.2f} сек)")
+                results[mode] = elapsed
+            else:
+                print(f"❌ {mode} не сработал.")
+    finally:
+        engine.stop()
+        t.join(timeout=2)
+        
+    if not results:
+        print("\n⚠ Ни один режим не смог подключиться.")
+        print("Возможно, нет интернета или включен VPN.")
+    else:
+        best_mode = min(results, key=results.get)
+        best_time = results[best_mode]
+        print(f"\n🏆 Лучший режим: {best_mode} ({best_time:.2f} сек)")
+        print(f"Используйте его: pydpi.py start --mode {best_mode}")
+        
+    return 0
 
 
 def cmd_test(args):
@@ -1556,7 +1654,13 @@ def build_parser():
                     help="меньше логов")
     sp.set_defaults(func=cmd_start)
 
-    sp = sub.add_parser("test", help="тест WinDivert")
+    sp = sub.add_parser("diagnose", help="полная диагностика (права, драйвер, DNS, фаервол)")
+    sp.set_defaults(func=cmd_diagnose)
+
+    sp = sub.add_parser("auto", help="авто-подбор лучшего режима обхода")
+    sp.set_defaults(func=cmd_auto)
+
+    sp = sub.add_parser("test", help="простой тест WinDivert (пересылка пакетов)")
     sp.add_argument("--duration", type=int, default=RT_TEST_DURATION_S,
                     help=f"длительность теста в секундах "
                          f"(по умолчанию {RT_TEST_DURATION_S})")

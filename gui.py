@@ -16,9 +16,10 @@ from tkinter import ttk, scrolledtext, messagebox
 
 from config import (
     APP_TITLE, APP_AUTHOR, APP_VERSION, APP_GITHUB,
-    TTL_MIN, TTL_MAX,
-    MODES, MODES_SPLIT,
+    TTL_MIN, TTL_MAX, MODES, MODES_SPLIT,
     DEFAULT_DOMAINS, DNS_CHECK_DOMAINS, DOCS_SECTIONS, CONFIG, UI, RT,
+    AUTO_TEST_MODES, AUTO_TEST_HOST, AUTO_TEST_INIT_DELAY, 
+    AUTO_TEST_SWITCH_DELAY, AUTO_TEST_TIMEOUT, THEMES
 )
 
 from bypass import DpiBypass, _ip_is_local, pydivert
@@ -61,6 +62,7 @@ class App:
         top = ttk.Frame(root, padding=8)
         top.pack(fill=tk.X)
 
+        # 1. Левая часть (Режим и TTL)
         ttk.Label(top, text="Режим:").pack(side=tk.LEFT)
         self.mode_var = tk.StringVar(value=UI.default_mode)
         self.mode_combo = ttk.Combobox(
@@ -68,28 +70,42 @@ class App:
             values=MODES, state="readonly", width=UI.mode_combo_width)
         self.mode_combo.pack(side=tk.LEFT, padx=5)
 
-        ttk.Label(top, text="Тема:").pack(side=tk.LEFT, padx=(10, 0))
-        self.theme_var = tk.StringVar(value="Светлая")
-        self.theme_combo = ttk.Combobox(
-            top, textvariable=self.theme_var,
-            values=("Светлая", "Темная"), state="readonly", width=8)
-        self.theme_combo.pack(side=tk.LEFT, padx=5)
-        self.theme_combo.bind("<<ComboboxSelected>>", self._apply_theme)
-
         ttk.Label(top, text="TTL фейка:").pack(side=tk.LEFT, padx=(10, 0))
         self.ttl_var = tk.StringVar(value=str(CONFIG.fake_ttl))
         self.ttl_entry = ttk.Entry(top, textvariable=self.ttl_var, width=4)
         self.ttl_entry.pack(side=tk.LEFT, padx=5)
 
-        self.start_btn = ttk.Button(top, text="▶ Старт", command=self.toggle)
+        # 2. Правая часть 
+        right_frame = ttk.Frame(top)
+        right_frame.pack(side=tk.RIGHT)
+
+        # Верхний ряд правой части 
+        btn_row = ttk.Frame(right_frame)
+        btn_row.pack(fill=tk.X, pady=(0, 2))
+
+        # Добавляем кнопки справа налево 
+        self.start_btn = ttk.Button(btn_row, text="▶ Старт", command=self.toggle)
         self.start_btn.pack(side=tk.RIGHT)
 
-        ttk.Button(top, text="Сбросить лог", command=self.clear_log
+        ttk.Button(btn_row, text="Сбросить лог", command=self.clear_log
                    ).pack(side=tk.RIGHT, padx=5)
 
-        ttk.Button(top, text="Документация", command=self.show_docs
-                   ).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_row, text="Документация", command=self.show_docs
+                   ).pack(side=tk.RIGHT)
 
+        # Нижний ряд правой части (Тема)
+        theme_row = ttk.Frame(right_frame)
+        theme_row.pack(fill=tk.X)
+
+        self.theme_var = tk.StringVar(value="Светлая")
+        self.theme_combo = ttk.Combobox(
+            theme_row, textvariable=self.theme_var,
+            values=("Светлая", "Темная"), state="readonly", width=8)
+        self.theme_combo.pack(side=tk.RIGHT)
+        self.theme_combo.bind("<<ComboboxSelected>>", self._apply_theme)
+
+        # Текст "Тема:" ставим левее комбобокса
+        ttk.Label(theme_row, text="Тема:").pack(side=tk.RIGHT, padx=(0, 5))
 
         # ── Панель параметров обхода ───────────────────────────────────
         opts = ttk.Frame(root, padding=(8, 0, 8, 8))
@@ -221,7 +237,7 @@ class App:
         win = tk.Toplevel(self.root)
         win.title("Документация")
         win.transient(self.root)
-        win.geometry("640x560")
+        win.geometry(UI.docs_window_size)
         win.minsize(500, 400)
         self._center_window(win)
 
@@ -374,7 +390,7 @@ class App:
         """Открывает окно для массового добавления и удаления доменов."""
         win = tk.Toplevel(self.root)
         win.title("Управление доменами")
-        win.geometry("550x650")
+        win.geometry(UI.dom_window_size)
         self._center_window(win)
         win.transient(self.root)
         win.grab_set()
@@ -509,62 +525,40 @@ class App:
 
     def _apply_theme(self, event=None):
         """Применяет выбранную тему (Светлая/Темная) ко всем виджетам."""
-        theme = self.theme_var.get()
+        theme_name = self.theme_var.get()
+        colors = THEMES.get(theme_name, THEMES["Светлая"]) # Берем цвета из конфига
         
         # Настраиваем базовую тему (clam лучше всего перекрашивается)
         style = ttk.Style()
         style.theme_use("clam")
         
-        if theme == "Темная":
-            bg = "#1e1e1e"          # Темный фон
-            fg = "#d4d4d4"          # Светлый текст
-            field_bg = "#2d2d2d"    # Фон полей ввода
-            btn_bg = "#333333"      # Фон кнопок
-            border = "#444444"      # Цвет рамок
-            
-            # Яркие цвета для лога на темном фоне
-            log_err = "#ff6b6b"
-            log_warn = "#feca57"
-            log_ok = "#1dd1a1"
-        else:
-            bg = "#f0f0f0"
-            fg = "#000000"
-            field_bg = "#ffffff"
-            btn_bg = "#e1e1e1"
-            border = "#cccccc"
-            
-            # Стандартные цвета лога
-            log_err = "#e74c3c"
-            log_warn = "#f39c12"
-            log_ok = "#2ecc71"
-
         # 1. Настраиваем стили ttk (кнопки, рамки, комбобоксы)
-        style.configure(".", background=bg, foreground=fg)
-        style.configure("TFrame", background=bg)
-        style.configure("TLabelframe", background=bg, bordercolor=border)
-        style.configure("TLabelframe.Label", background=bg, foreground=fg)
-        style.configure("TLabel", background=bg, foreground=fg)
+        style.configure(".", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("TLabelframe", background=colors["bg"], bordercolor=colors["border"])
+        style.configure("TLabelframe.Label", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TLabel", background=colors["bg"], foreground=colors["fg"])
         
-        style.configure("TButton", background=btn_bg, foreground=fg, bordercolor=border)
-        style.map("TButton", background=[("active", border)])
+        style.configure("TButton", background=colors["btn_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.map("TButton", background=[("active", colors["border"])])
         
-        style.configure("TEntry", fieldbackground=field_bg, foreground=fg, bordercolor=border)
-        style.configure("TCombobox", fieldbackground=field_bg, foreground=fg, bordercolor=border)
-        style.configure("TSpinbox", fieldbackground=field_bg, foreground=fg, bordercolor=border)
+        style.configure("TEntry", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.configure("TCombobox", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.configure("TSpinbox", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
         
-        style.configure("TCheckbutton", background=bg, foreground=fg)
-        style.map("TCheckbutton", background=[("active", bg)])
+        style.configure("TCheckbutton", background=colors["bg"], foreground=colors["fg"])
+        style.map("TCheckbutton", background=[("active", colors["bg"])])
 
-        # 2. Красим главное окно и статус-бар
-        self.root.configure(bg=bg)
+        # 2. Красим главное окно
+        self.root.configure(bg=colors["bg"])
 
-        # 3. Красим текстовое поле лога (и курсор)
-        self.log_text.configure(bg=field_bg, fg=fg, insertbackground=fg)
+        # 3. Красим текстовое поле лога
+        self.log_text.configure(bg=colors["field_bg"], fg=colors["fg"], insertbackground=colors["fg"])
 
         # 4. Обновляем цвета тегов в логе
-        self.log_text.tag_config("error", foreground=log_err)
-        self.log_text.tag_config("warning", foreground=log_warn)
-        self.log_text.tag_config("success", foreground=log_ok)
+        self.log_text.tag_config("error", foreground=colors["log_err"])
+        self.log_text.tag_config("warning", foreground=colors["log_warn"])
+        self.log_text.tag_config("success", foreground=colors["log_ok"])
 
     # ── Блокировка контролов ──────────────────────────────────────────
 
@@ -1110,7 +1104,7 @@ class App:
         """Запускает окно диагностики с проверкой WinDivert и DNS."""
         win = tk.Toplevel(self.root)
         win.title("Диагностика PY-DPI")
-        win.geometry("550x450")
+        win.geometry(UI.diag_window_size)
         self._center_window(win)
         win.transient(self.root)
         win.grab_set()
@@ -1165,11 +1159,18 @@ class App:
         btn_close = ttk.Button(frame, text="Пожалуйста, подождите...", state=tk.DISABLED)
         btn_close.pack()
 
+        self._test_running = True
+        self.start_btn.config(state=tk.DISABLED)
+
         def _finish_test():
             """Разблокирует кнопку закрытия."""
             if state["is_closed"]:
                 return
             btn_close.config(state=tk.NORMAL, text="Закрыть", command=on_close)
+
+            self._test_running = False
+            if self.thread is None:
+                self.start_btn.config(state=tk.NORMAL)
 
         def worker():
             _log("=== Запуск диагностики ===", "info")
@@ -1327,7 +1328,7 @@ class App:
         threading.Thread(target=worker, daemon=True).start()
 
     def run_auto_test(self):
-        """Перебирает режимы на лету и выбирает самый быстрый."""
+        """Открывает окно авто-подбора режима."""
         if self.thread is not None:
             messagebox.showinfo("Авто-тест", "Сначала остановите обход.")
             return
@@ -1336,16 +1337,80 @@ class App:
             messagebox.showerror("Ошибка", "Нужны права администратора.")
             return
 
-        self.auto_btn.config(state=tk.DISABLED)
+        # Создаем отдельное окно
+        win = tk.Toplevel(self.root)
+        win.title("Авто-подбор режима")
+        win.geometry(UI.auto_window_size)
+        win.transient(self.root)
+        win.grab_set()
+        self._center_window(win) # Центрируем (метод мы добавляли ранее)
+
+        bg_color = self.root.cget("bg")
+        win.configure(bg=bg_color)
+
+        # Флаг закрытия окна
+        state = {"is_closed": False}
+
+        def on_close():
+            state["is_closed"] = True
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        txt = scrolledtext.ScrolledText(frame, wrap=tk.WORD, font=UI.log_font, state=tk.DISABLED)
+        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        txt.tag_config("ok", foreground="#2ecc71")
+        txt.tag_config("err", foreground="#e74c3c")
+        txt.tag_config("warn", foreground="#f39c12")
+        txt.tag_config("info", foreground="#3498db")
+
+        def _log(msg, tag=None):
+            if state["is_closed"]: return
+            try:
+                win.after(0, lambda: _insert_log(msg, tag))
+            except tk.TclError:
+                pass
+            
+        def _insert_log(msg, tag):
+            if state["is_closed"]: return
+            try:
+                txt.config(state=tk.NORMAL)
+                if tag:
+                    txt.insert(tk.END, msg + "\n", tag)
+                else:
+                    txt.insert(tk.END, msg + "\n")
+                txt.see(tk.END)
+                txt.config(state=tk.DISABLED)
+            except tk.TclError:
+                pass
+
+        # Кнопка закрытия 
+        btn_close = ttk.Button(frame, text="Пожалуйста, подождите...", state=tk.DISABLED)
+        btn_close.pack()
+
+        self._test_running = True
         self.start_btn.config(state=tk.DISABLED)
-        self.status.set("⚡ Идет авто-подбор режима...")
-        self.log("=== Начат авто-подбор режима ===", "info")
-        self.log("⚠ Не используйте браузер во время теста (займет ~10-15 сек)", "warning")
+
+        def _finish_test():
+            """Разблокирует кнопку закрытия."""
+            if state["is_closed"]: return
+            btn_close.config(state=tk.NORMAL, text="Закрыть", command=on_close)
+
+            self._test_running = False
+            if self.thread is None:
+                self.start_btn.config(state=tk.NORMAL)
 
         def worker():
-            modes_to_test = ["split", "disorder", "triple_disorder", "triple_split", "fake+split", "fake+disorder"]
+            _log("=== Запуск авто-подбора ===", "info")
+            _log("⚠ Не используйте браузер во время теста\n", "warn")
+
+            modes_to_test = AUTO_TEST_MODES
             results = {}
-            target_host = "youtube.com"
+            target_host = AUTO_TEST_HOST
             test_domains = ["youtube.com", "googlevideo.com"]
 
             start_mode = modes_to_test[0]
@@ -1353,21 +1418,23 @@ class App:
             engine = DpiBypass(
                 domains=test_domains, 
                 mode=start_mode, 
-                log_cb=lambda x: None,
+                log_cb=lambda x: None, # Отключаем логи движка
                 config=cfg
             )
             
             t = threading.Thread(target=engine.run, daemon=True)
             t.start()
             
-            time.sleep(2.0) # Ждем инициализации драйвера
+            _log("Инициализация драйвера WinDivert...")
+            time.sleep(AUTO_TEST_INIT_DELAY)
             
             try:
                 for mode in modes_to_test:
-                    self.log(f"Тестирую режим: {mode}...")
+                    if state["is_closed"]: break
                     
+                    _log(f"\nТестирую режим: {mode}...")
                     engine.mode = mode # МЕНЯЕМ РЕЖИМ НА ЛЕТУ
-                    time.sleep(0.5)
+                    time.sleep(AUTO_TEST_SWITCH_DELAY)
                     
                     success = False
                     elapsed = 99.0
@@ -1375,7 +1442,7 @@ class App:
                     try:
                         t0 = time.time()
                         context = ssl.create_default_context()
-                        with socket.create_connection((target_host, 443), timeout=4) as sock:
+                        with socket.create_connection((target_host, 443), timeout=AUTO_TEST_TIMEOUT) as sock:
                             with context.wrap_socket(sock, server_hostname=target_host):
                                 success = True
                                 elapsed = time.time() - t0
@@ -1383,37 +1450,34 @@ class App:
                         success = False
                     
                     if success:
-                        self.log(f"✅ {mode} работает! ({elapsed:.2f} сек)", "success")
+                        _log(f"✅ {mode} работает! (Время: {elapsed:.2f} сек)", "ok")
                         results[mode] = elapsed
                     else:
-                        self.log(f"❌ {mode} не сработал.", "error")
+                        _log(f"❌ {mode} не сработал.", "err")
             finally:
                 engine.stop()
                 t.join(timeout=2)
 
             # Выбор победителя
-            if not results:
-                self.log("⚠ Ни один режим не смог подключиться.", "warning")
-                msg = "Не удалось подобрать режим.\nВозможно, нет интернета или включен VPN."
-                self.root.after(0, lambda: messagebox.showerror("Авто-тест", msg))
-            else:
-                best_mode = min(results, key=results.get)
-                best_time = results[best_mode]
+            if not state["is_closed"]:
+                if not results:
+                    _log("\n⚠ Ни один режим не смог подключиться.", "warn")
+                    msg = "Не удалось подобрать режим.\nВозможно, нет интернета или включен VPN."
+                    win.after(0, lambda: messagebox.showerror("Авто-тест", msg))
+                else:
+                    best_mode = min(results, key=results.get)
+                    best_time = results[best_mode]
+                    
+                    _log(f"\n🏆 Лучший режим: {best_mode} ({best_time:.2f} сек)", "ok")
+                    
+                    # Применяем режим в главном окне
+                    def apply_best():
+                        self.mode_var.set(best_mode)
+                        self._sync_mode_state()
+                    
+                    self.root.after(0, apply_best)
                 
-                self.log(f"🏆 Лучший режим: {best_mode} ({best_time:.2f} сек)", "success")
-                
-                def apply_best():
-                    self.mode_var.set(best_mode)
-                    self._sync_mode_state()
-                    messagebox.showinfo("Авто-тест", 
-                        f"Успешно!\nВыбран режим: {best_mode}\nВремя: {best_time:.2f} сек.")
-                
-                self.root.after(0, apply_best)
-
-            def reset_buttons():
-                self.auto_btn.config(state=tk.NORMAL)
-                self.start_btn.config(state=tk.NORMAL)
-                self.status.set("Готов")
-            self.root.after(0, reset_buttons)
+                # Разблокируем кнопку закрытия
+                win.after(0, _finish_test)
 
         threading.Thread(target=worker, daemon=True).start()

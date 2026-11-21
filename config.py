@@ -107,6 +107,10 @@ class UiConfig:
     """Настройки графического интерфейса (GUI)"""
     window_size: str = "900x720"
     window_min_size: tuple = (660, 500)
+    diag_window_size: str = "550x450"
+    auto_window_size: str = "500x400"
+    dom_window_size: str = "550x650"
+    docs_window_size: str = "640x560"
 
     log_poll_ms: int = 300
     stats_poll_ms: int = 1500
@@ -137,7 +141,7 @@ class RuntimeConfig:
     stop_watchdog_ms: int = 5000
     close_join_timeout_s: float = 5.0
 
-    packet_queue_maxsize: int = 5000
+    packet_queue_maxsize: int = 7000
     worker_join_timeout_s: float = 1.5
     recv_join_timeout_s: float = 1.0
     queue_get_timeout_s: float = 0.2
@@ -187,6 +191,45 @@ class DpiConfig:
 
 
 CONFIG = DpiConfig()
+
+# --- Настройки авто-подбора ---
+AUTO_TEST_MODES = [
+    "split", 
+    "disorder", 
+    "triple_split", 
+    "triple_disorder", 
+    "fake+split", 
+    "fake+disorder"
+]
+
+AUTO_TEST_HOST = "youtube.com"    # Сайт, на котором тестируем соединение
+AUTO_TEST_INIT_DELAY = 2.0        # Секунд на инициализацию WinDivert
+AUTO_TEST_SWITCH_DELAY = 0.5      # Секунд на переключение режима
+AUTO_TEST_TIMEOUT = 5             # Таймаут подключения 
+
+# --- Цветовые схемы тем ---
+THEMES = {
+    "Светлая": {
+        "bg": "#f0f0f0",
+        "fg": "#000000",
+        "field_bg": "#ffffff",
+        "btn_bg": "#e1e1e1",
+        "border": "#cccccc",
+        "log_err": "#e74c3c",
+        "log_warn": "#f39c12",
+        "log_ok": "#2ecc71",
+    },
+    "Темная": {
+        "bg": "#1e1e1e",
+        "fg": "#d4d4d4",
+        "field_bg": "#2d2d2d",
+        "btn_bg": "#333333",
+        "border": "#444444",
+        "log_err": "#ff6b6b",
+        "log_warn": "#feca57",
+        "log_ok": "#1dd1a1",
+    }
+}
 
 # --- Домены для авто-проверки подмены DNS при запуске ---
 DNS_CHECK_DOMAINS = (
@@ -263,6 +306,15 @@ DOCS_SECTIONS = (
           "наличие библиотеки pydivert, подмену DNS, статус брандмауэра Windows, "
           "а также проводит короткий тест перехвата пакетов через WinDivert. "
           "Отличный инструмент, если обход перестал работать."),
+
+    ("h2", "⚡ Авто-подбор"),
+    ("p", "Автоматически подбирает самый быстрый и рабочий режим обхода "
+          "для вашего провайдера. Программа по очереди запускает все "
+          "доступные режимы (split, disorder, triple, fake) и пытается "
+          "установить реальное TLS-соединение с YouTube.\n\n"
+          "Тест занимает около 15-30 секунд. Победивший режим (тот, что "
+          "подключился быстрее всех) автоматически устанавливается в "
+          "главном окне программы."),
 )
 
 # --- Список доменов, которые обходятся по умолчанию ---
