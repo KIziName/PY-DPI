@@ -1,4 +1,5 @@
 import argparse
+import os 
 import copy
 import ctypes
 import functools
@@ -1207,9 +1208,21 @@ class DpiBypass:
 
 # --- CLI ФУНКЦИИ ---
 
+def get_appdata_domains_path():
+    """Возвращает путь к файлу доменов в AppData (как в GUI)."""
+    appdata = os.environ.get('APPDATA')
+    if appdata:
+        base_dir = os.path.join(appdata, 'PY-DPI')
+    else:
+        base_dir = os.path.join(os.path.expanduser('~'), '.config', 'PY-DPI')
+    return os.path.join(base_dir, 'domains.txt')
+
 def load_domains(args):
-    domains = set() if args.no_defaults else set(DEFAULT_DOMAINS)
+    """Загружает домены. Приоритет: --domains-file > AppData > DEFAULT_DOMAINS."""
+    
+    # 1. Если пользователь явно указал файл в аргументах
     if args.domains_file:
+        domains = set()
         try:
             with open(args.domains_file, "r", encoding="utf-8") as f:
                 for line in f:
@@ -1218,7 +1231,24 @@ def load_domains(args):
                         domains.add(line)
         except Exception as e:
             print(f"!! не удалось прочитать {args.domains_file}: {e}")
-    return sorted(domains)
+        return sorted(domains)
+
+    # 2. Пытаемся прочитать из AppData (файл, который сохранил GUI)
+    appdata_path = get_appdata_domains_path()
+    if os.path.exists(appdata_path):
+        try:
+            with open(appdata_path, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+                if lines: # Если файл не пустой
+                    print(f"ℹ Загружено {len(lines)} доменов из AppData")
+                    return lines
+        except Exception as e:
+            print(f"!! Ошибка чтения AppData: {e}")
+
+    # 3. Если ничего не нашли, берем встроенные
+    if args.no_defaults:
+        return []
+    return sorted(list(DEFAULT_DOMAINS))
 
 
 def build_config(args):
