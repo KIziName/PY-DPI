@@ -34,6 +34,12 @@ python pydpi.py start --mode fake+split
 # Fake + disorder (самый «злой»)
 python pydpi.py start --mode fake+disorder
 
+# ──────────── Авто-подбор режима ────────────
+
+# Автоматически перебирает 6 режимов и выбирает самый быстрый для вашего провайдера
+python pydpi.py auto
+
+
 # ──────────── Параметры фейка ────────────
 
 # TTL фейка = 1 (по умолчанию 3)
@@ -52,11 +58,15 @@ python pydpi.py start --all --mode fake+split
 
 # ──────────── Диагностика ────────────
 
-# Проверить, что WinDivert открывается (5 сек)
+# ПОЛНАЯ ДИАГНОСТИКА: права, драйвер, DNS, фаервол и тест пакетов в одной команде
+python pydpi.py diagnose
+
+# Проверить только, что WinDivert открывается (5 сек)
 python pydpi.py test
 
-# Проверить DNS на подмену (нужен интернет)
+# Проверить только DNS на подмену
 python pydpi.py dns
+
 
 # ──────────── Справка ────────────
 
@@ -70,10 +80,16 @@ python pydpi.py --version
 python pydpi.py --help
 python pydpi.py start --help
 python pydpi.py test --help
+python pydpi.py auto --help
+python pydpi.py diagnose --help
 python pydpi.py dns --help
 python pydpi.py list-modes --help
 
 # Рекомендуемая последовательность (если не пробивает) 
+
+# 0. Запустите полную диагностику или авто-тест
+python pydpi.py diagnose
+python pydpi.py auto
 
 # 1. Дефолт (disorder + midsld)
 python pydpi.py start

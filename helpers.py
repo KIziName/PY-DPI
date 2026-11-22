@@ -10,11 +10,6 @@ def is_admin():
         return False
 
 def on_ui(func):
-    """
-    Декоратор: безопасно переносит вызов функции из фонового потока в GUI-поток.
-    Tkinter не является потокобезопасным, поэтому изменения интерфейса 
-    должны происходить строго в главном потоке (через ui_queue).
-    """
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         try:

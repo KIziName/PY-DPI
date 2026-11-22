@@ -7,22 +7,25 @@ import re
 import tkinter as tk
 import webbrowser
 import queue
+import os
+import subprocess
+import ssl
 
 from dataclasses import replace
 from tkinter import ttk, scrolledtext, messagebox
 
 from config import (
     APP_TITLE, APP_AUTHOR, APP_VERSION, APP_GITHUB,
-    TTL_MIN, TTL_MAX,
-    MODES, MODES_SPLIT,
+    TTL_MIN, TTL_MAX, MODES, MODES_SPLIT,
     DEFAULT_DOMAINS, DNS_CHECK_DOMAINS, DOCS_SECTIONS, CONFIG, UI, RT,
+    AUTO_TEST_MODES, AUTO_TEST_HOST, AUTO_TEST_INIT_DELAY, 
+    AUTO_TEST_SWITCH_DELAY, AUTO_TEST_TIMEOUT, THEMES
 )
 
 from bypass import DpiBypass, _ip_is_local, pydivert
 from helpers import is_admin, on_ui, require_admin
 
 # Точные паттерны для авто-определения уровня лога.
-# \b работает с кириллицей благодаря Unicode по умолчанию в re.
 _ERROR_RE = re.compile(r"(❌|\bошибка\b|\berror\b|^!!)", re.IGNORECASE)
 _WARN_RE = re.compile(r"(⚠|\bне\s+удалось\b|\bне\s+завершил)", re.IGNORECASE)
 _SUCCESS_RE = re.compile(
@@ -59,6 +62,7 @@ class App:
         top = ttk.Frame(root, padding=8)
         top.pack(fill=tk.X)
 
+        # 1. Левая часть (Режим и TTL)
         ttk.Label(top, text="Режим:").pack(side=tk.LEFT)
         self.mode_var = tk.StringVar(value=UI.default_mode)
         self.mode_combo = ttk.Combobox(
@@ -71,20 +75,37 @@ class App:
         self.ttl_entry = ttk.Entry(top, textvariable=self.ttl_var, width=4)
         self.ttl_entry.pack(side=tk.LEFT, padx=5)
 
-        self.start_btn = ttk.Button(top, text="▶ Старт", command=self.toggle)
+        # 2. Правая часть 
+        right_frame = ttk.Frame(top)
+        right_frame.pack(side=tk.RIGHT)
+
+        # Верхний ряд правой части 
+        btn_row = ttk.Frame(right_frame)
+        btn_row.pack(fill=tk.X, pady=(0, 2))
+
+        # Добавляем кнопки справа налево 
+        self.start_btn = ttk.Button(btn_row, text="▶ Старт", command=self.toggle)
         self.start_btn.pack(side=tk.RIGHT)
 
-        ttk.Button(top, text="Сбросить лог", command=self.clear_log
+        ttk.Button(btn_row, text="Сбросить лог", command=self.clear_log
                    ).pack(side=tk.RIGHT, padx=5)
 
-        self.test_btn = ttk.Button(top, text="Тест", command=self.test_windivert)
-        self.test_btn.pack(side=tk.RIGHT, padx=5)
+        ttk.Button(btn_row, text="Документация", command=self.show_docs
+                   ).pack(side=tk.RIGHT)
 
-        ttk.Button(top, text="Документация", command=self.show_docs
-                   ).pack(side=tk.RIGHT, padx=5)
+        # Нижний ряд правой части (Тема)
+        theme_row = ttk.Frame(right_frame)
+        theme_row.pack(fill=tk.X)
 
-        ttk.Button(top, text="О программе", command=self.show_about
-                   ).pack(side=tk.RIGHT, padx=5)
+        self.theme_var = tk.StringVar(value="Светлая")
+        self.theme_combo = ttk.Combobox(
+            theme_row, textvariable=self.theme_var,
+            values=("Светлая", "Темная"), state="readonly", width=8)
+        self.theme_combo.pack(side=tk.RIGHT)
+        self.theme_combo.bind("<<ComboboxSelected>>", self._apply_theme)
+
+        # Текст "Тема:" ставим левее комбобокса
+        ttk.Label(theme_row, text="Тема:").pack(side=tk.RIGHT, padx=(0, 5))
 
         # ── Панель параметров обхода ───────────────────────────────────
         opts = ttk.Frame(root, padding=(8, 0, 8, 8))
@@ -116,13 +137,27 @@ class App:
             command=self._on_bypass_all_toggle)
         self.bypass_all_chk.pack(side=tk.LEFT, padx=(10, 0))
 
-        # ── Домены (read-only, список из config) ───────────────────────
+        # ── Домены ─────────────────────────────────────────────────────
         mid = ttk.LabelFrame(root, text="Домены", padding=5)
         mid.pack(fill=tk.X, padx=8, pady=5)
-        self.domains_text = tk.Text(mid, height=UI.domains_text_height,
-                                    wrap="none", state=tk.DISABLED,
-                                    bg=UI.domains_bg)
-        self.domains_text.pack(fill=tk.X)
+        
+        # Создаем один общий фрейм для всех трех кнопок
+        btn_row = ttk.Frame(mid)
+        btn_row.pack(fill=tk.X, pady=2, padx=2)
+        
+        # Кнопка управления доменами
+        self.dom_btn = ttk.Button(btn_row, text="⚙ Управление списком доменов", 
+                                  command=self._open_domains_window)
+        self.dom_btn.pack(side=tk.LEFT)
+
+        self.auto_btn = ttk.Button(btn_row, text="⚡Авто-подбор", command=self.run_auto_test)
+        self.auto_btn.pack(side=tk.RIGHT,)
+       
+        self.diag_btn = ttk.Button(btn_row, text="🩺 Диагностика", command=self.run_diagnostics)
+        self.diag_btn.pack(side=tk.RIGHT,)
+
+        # Переменная, где будет храниться актуальный список доменов
+        self.current_domains = []
 
         # ── Лог ────────────────────────────────────────────────────────
         bot = ttk.LabelFrame(root, text="Лог", padding=5)
@@ -162,30 +197,49 @@ class App:
         self.root.after(UI.log_poll_ms, self._pump_ui)
         self.root.after(UI.stats_poll_ms, self._update_stats)
 
+        about_frame = ttk.Frame(root, padding=(8, 0, 8, 8))
+        about_frame.pack(fill=tk.X, side=tk.BOTTOM)
+        ttk.Button(about_frame, text="О программе", command=self.show_about
+                   ).pack(side=tk.RIGHT)
+
+
         self.log(f"Python: {sys.version.split()[0]}")
-        if is_admin():
-            self.log("Админ права: ДА")
-        else:
-            self.log("Админ права: НЕТ ⚠ — запуск обхода будет недоступен")
-        if pydivert is None:
-            self.log("⚠ pydivert НЕ УСТАНОВЛЕН. Выполни: pip install pydivert")
-        else:
-            self.log("pydivert: OK")
-
-        self.fill_domains()
+      
+        self._load_domains()
         self._sync_mode_state()
-
-        self.root.after(1000, self._check_dns_async)
+        self._apply_theme()
 
     # ── Окна документации / о программе ───────────────────────────────
+
+    def _center_window(self, win):
+        """Центрирует дочернее окно относительно главного окна."""
+        win.update_idletasks() # Обновляем размеры, чтобы узнать реальную ширину/высоту
+        
+        # Получаем координаты и размеры главного окна
+        root_x = self.root.winfo_rootx()
+        root_y = self.root.winfo_rooty()
+        root_w = self.root.winfo_width()
+        root_h = self.root.winfo_height()
+        
+        # Получаем размеры дочернего окна
+        win_w = win.winfo_width()
+        win_h = win.winfo_height()
+        
+        # Вычисляем позицию для центрирования
+        px = root_x + (root_w - win_w) // 2
+        py = root_y + (root_h - win_h) // 2
+        
+        # Применяем координаты (max(0, ...) защищает от вылета за край экрана)
+        win.geometry(f"+{max(px, 0)}+{max(py, 0)}")
 
     def show_docs(self):
         """Открывает окно с документацией (текст берется из config.py)."""
         win = tk.Toplevel(self.root)
         win.title("Документация")
         win.transient(self.root)
-        win.geometry("640x560")
+        win.geometry(UI.docs_window_size)
         win.minsize(500, 400)
+        self._center_window(win)
 
         frame = ttk.Frame(win, padding=10)
         frame.pack(fill=tk.BOTH, expand=True)
@@ -264,12 +318,247 @@ class App:
         ttk.Button(frame, text="Закрыть", command=win.destroy
                    ).pack(anchor="e")
 
-        win.update_idletasks()
-        px = self.root.winfo_rootx() + (self.root.winfo_width() - win.winfo_width()) // 2
-        py = self.root.winfo_rooty() + (self.root.winfo_height() - win.winfo_height()) // 2
-        win.geometry(f"+{max(px, 0)}+{max(py, 0)}")
+        self._center_window(win)
 
         win.bind("<Escape>", lambda e: win.destroy())
+
+    def _get_domains_path(self):
+        """Возвращает путь к файлу доменов в папке AppData."""
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            base_dir = os.path.join(appdata, 'PY-DPI')
+        else:
+            # Фолбэк, если вдруг AppData нет (маловероятно)
+            base_dir = os.path.join(os.path.expanduser('~'), '.config', 'PY-DPI')
+            
+        os.makedirs(base_dir, exist_ok=True)
+        return os.path.join(base_dir, 'domains.txt')
+
+    def _load_domains(self):
+        """Загружает домены из AppData. Если файла нет — создает с дефолтными."""
+        path = self._get_domains_path()
+        if not os.path.exists(path):
+            # Если файла нет, сохраняем дефолтные при первом запуске
+            self.current_domains = list(DEFAULT_DOMAINS)
+            self._save_domains_to_file()
+        else:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+                    self.current_domains = lines
+            except Exception as e:
+                self.log(f"⚠ Ошибка чтения доменов: {e}")
+                self.current_domains = list(DEFAULT_DOMAINS)
+
+    def _save_domains_to_file(self):
+        """Сохраняет текущий список self.current_domains в файл AppData."""
+        path = self._get_domains_path()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(self.current_domains))
+        except Exception as e:
+            self.log(f"❌ Ошибка сохранения доменов: {e}")
+
+    def _clean_domain(self, raw_domain):
+        """Максимально строгая очистка и валидация домена (только латиница)."""
+        if not raw_domain:
+            return None
+            
+        # 1. Убираем все невидимые символы (пробелы, табы, переносы) по краям
+        d = raw_domain.strip().lower()
+        if not d:
+            return None
+        
+        # 2. Убираем протоколы (http://, https://) и www.
+        d = re.sub(r'^https?://', '', d)
+        d = re.sub(r'^www\.', '', d)
+        
+        # 3. Отрезаем пути, порты и якоря (всё, что после /, :, ?)
+        d = d.split('/')[0].split(':')[0].split('?')[0].split('#')[0]
+        
+        # 4. Проверка длины (стандарт DNS - до 253 символов)
+        if len(d) > 253 or len(d) < 4:
+            return None
+            
+        # 5. Строгая проверка регуляркой:
+        if re.match(r'^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$', d):
+            return d
+            
+        return None
+
+    def _open_domains_window(self):
+        """Открывает окно для массового добавления и удаления доменов."""
+        win = tk.Toplevel(self.root)
+        win.title("Управление доменами")
+        win.geometry(UI.dom_window_size)
+        self._center_window(win)
+        win.transient(self.root)
+        win.grab_set()
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        # ── 1. Блок текущих доменов ──
+        ttk.Label(frame, text="Текущие домены в списке:").pack(anchor="w")
+        
+        list_frame = ttk.Frame(frame)
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(2, 10))
+        
+        scrollbar = ttk.Scrollbar(list_frame)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, selectmode=tk.EXTENDED, font=("Consolas", 9))
+        listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=listbox.yview)
+
+        for d in sorted(self.current_domains):
+            listbox.insert(tk.END, d)
+
+        # ── 2. Блок массового ввода ──
+        ttk.Label(frame, text="Вставьте новые домены (каждый с новой строки):").pack(anchor="w")
+        
+        text_frame = ttk.Frame(frame)
+        text_frame.pack(fill=tk.BOTH, expand=True, pady=(2, 5))
+        
+        text_scroll = ttk.Scrollbar(text_frame)
+        text_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Поле ввода: убеждаемся, что state=tk.NORMAL (по умолчанию)
+        input_text = tk.Text(text_frame, height=6, font=("Consolas", 9), 
+                             yscrollcommand=text_scroll.set, wrap="none")
+        input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        text_scroll.config(command=input_text.yview)
+
+        # --- (ПКМ и горячие клавиши) ---
+        def paste_text(event=None):
+            try:
+                # Получаем текст из буфера обмена Windows
+                clipboard_text = win.clipboard_get()
+                input_text.insert(tk.INSERT, clipboard_text)
+            except tk.TclError:
+                pass # Буфер обмена пуст
+            
+        def select_all(event=None):
+            input_text.tag_add(tk.SEL, "1.0", tk.END)
+            input_text.mark_set(tk.INSERT, "1.0")
+            input_text.see(tk.INSERT)
+            return "break"
+            
+        # Создаем контекстное меню (ПКМ)
+        context_menu = tk.Menu(input_text, tearoff=0)
+        context_menu.add_command(label="Вставить", command=paste_text)
+        context_menu.add_command(label="Выделить всё", command=select_all)
+
+        def show_context_menu(event):
+            context_menu.post(event.x_root, event.y_root)
+
+        # Привязываем события
+        input_text.bind("<Button-3>", show_context_menu) # ПКМ
+        input_text.bind("<Control-v>", paste_text)       # Ctrl+V
+        input_text.bind("<Control-V>", paste_text)       # Ctrl+Shift+V 
+        input_text.bind("<Control-a>", select_all)       # Ctrl+A
+        input_text.bind("<Control-A>", select_all)
+        # --------------------------------------------------
+
+        # ── 3. Логика добавления ──
+        def add_domains():
+            raw_text = input_text.get("1.0", tk.END)
+            raw_lines = raw_text.splitlines()
+            
+            added_count = 0
+            skipped_count = 0
+            existing = set(listbox.get(0, tk.END))
+            
+            for line in raw_lines:
+                if not line.strip():
+                    continue 
+                    
+                clean = self._clean_domain(line)
+                
+                if clean:
+                    if clean not in existing:
+                        listbox.insert(tk.END, clean)
+                        existing.add(clean)
+                        added_count += 1
+                else:
+                    skipped_count += 1
+            
+            input_text.delete("1.0", tk.END)
+            
+            if added_count > 0 and skipped_count > 0:
+                self.log(f"✅ Добавлено: {added_count} | ⚠ Пропущено: {skipped_count}")
+            elif added_count > 0:
+                self.log(f"✅ Успешно добавлено новых доменов: {added_count}")
+            elif skipped_count > 0:
+                self.log(f"⚠ Все введенные строки некорректны ({skipped_count} шт.)")
+            else:
+                self.log("Нет новых доменов для добавления (список пуст).")
+
+        def remove_selected():
+            selected = listbox.curselection()
+            if not selected:
+                return
+            for index in reversed(selected):
+                listbox.delete(index)
+
+        def save_and_close():
+            self.current_domains = list(listbox.get(0, tk.END))
+            self._save_domains_to_file()
+            win.destroy()
+            self.log(f"💾 Список доменов сохранен (всего: {len(self.current_domains)})")
+
+        # ── 4. Кнопки управления ──
+        btn_add_frame = ttk.Frame(frame)
+        btn_add_frame.pack(fill=tk.X, pady=(0, 10))
+
+        # Переименовали кнопку
+        add_btn = ttk.Button(btn_add_frame, text="➕ Добавить в список", command=add_domains)
+        add_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+
+        del_btn = ttk.Button(btn_add_frame, text="❌ Удалить выбранные", command=remove_selected)
+        del_btn.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
+        
+        ttk.Separator(frame, orient="horizontal").pack(fill=tk.X, pady=5)
+
+        save_btn = ttk.Button(frame, text="💾 Сохранить и закрыть", command=save_and_close)
+        save_btn.pack(fill=tk.X, ipady=5)
+
+    def _apply_theme(self, event=None):
+        """Применяет выбранную тему (Светлая/Темная) ко всем виджетам."""
+        theme_name = self.theme_var.get()
+        colors = THEMES.get(theme_name, THEMES["Светлая"]) # Берем цвета из конфига
+        
+        # Настраиваем базовую тему (clam лучше всего перекрашивается)
+        style = ttk.Style()
+        style.theme_use("clam")
+        
+        # 1. Настраиваем стили ttk (кнопки, рамки, комбобоксы)
+        style.configure(".", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TFrame", background=colors["bg"])
+        style.configure("TLabelframe", background=colors["bg"], bordercolor=colors["border"])
+        style.configure("TLabelframe.Label", background=colors["bg"], foreground=colors["fg"])
+        style.configure("TLabel", background=colors["bg"], foreground=colors["fg"])
+        
+        style.configure("TButton", background=colors["btn_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.map("TButton", background=[("active", colors["border"])])
+        
+        style.configure("TEntry", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.configure("TCombobox", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        style.configure("TSpinbox", fieldbackground=colors["field_bg"], foreground=colors["fg"], bordercolor=colors["border"])
+        
+        style.configure("TCheckbutton", background=colors["bg"], foreground=colors["fg"])
+        style.map("TCheckbutton", background=[("active", colors["bg"])])
+
+        # 2. Красим главное окно
+        self.root.configure(bg=colors["bg"])
+
+        # 3. Красим текстовое поле лога
+        self.log_text.configure(bg=colors["field_bg"], fg=colors["fg"], insertbackground=colors["fg"])
+
+        # 4. Обновляем цвета тегов в логе
+        self.log_text.tag_config("error", foreground=colors["log_err"])
+        self.log_text.tag_config("warning", foreground=colors["log_warn"])
+        self.log_text.tag_config("success", foreground=colors["log_ok"])
 
     # ── Блокировка контролов ──────────────────────────────────────────
 
@@ -277,11 +566,14 @@ class App:
         """Включает или выключает элементы управления (во время работы)."""
         self._controls_enabled = enabled
         self.mode_combo.config(state="readonly" if enabled else tk.DISABLED)
-        self.test_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        self.dom_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        self.auto_btn.config(state=tk.NORMAL if enabled else tk.DISABLED) 
         self.split_combo.config(state="readonly" if enabled else tk.DISABLED)
-        self.bypass_all_chk.config(
-            state=tk.NORMAL if enabled else tk.DISABLED)
+        self.bypass_all_chk.config(state=tk.NORMAL if enabled else tk.DISABLED)
+        self.dom_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
         self._sync_mode_state()
+
+        self.diag_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _sync_mode_state(self):
         """Блокирует поля TTL/повторов/badsum, если выбран режим без fake."""
@@ -365,10 +657,7 @@ class App:
     # ── Лог ───────────────────────────────────────────────────────────
 
     def log(self, msg, level=None):
-        """Потокобезопасный метод добавления сообщения в лог.
 
-        level: None (авто-эвристика) | 'error' | 'warning' | 'success'.
-        """
         self.log_queue.put((str(msg), level))
 
     def clear_log(self):
@@ -673,11 +962,11 @@ class App:
 
         bypass_all = bool(self.bypass_all_var.get())
 
-        domains = [d.strip() for d in
-                   self.domains_text.get("1.0", tk.END).splitlines()
-                   if d.strip()]
+        # БЕРЕМ ДОМЕНЫ ИЗ НАШЕГО НОВОГО СПИСКА 
+        domains = self.current_domains
+        
         if not domains and not bypass_all:
-            messagebox.showerror("Ошибка", "Список доменов пуст.")
+            messagebox.showerror("Ошибка", "Список доменов пуст. Добавь домены или включи 'обход всего'.")
             return
 
         mode = self.mode_var.get()
@@ -811,11 +1100,384 @@ class App:
         self.thread = None
         self._reset_ui()
 
-    # ── Заполнение списка доменов ─────────────────────────────────────
+    def run_diagnostics(self):
+        """Запускает окно диагностики с проверкой WinDivert и DNS."""
+        win = tk.Toplevel(self.root)
+        win.title("Диагностика PY-DPI")
+        win.geometry(UI.diag_window_size)
+        self._center_window(win)
+        win.transient(self.root)
+        win.grab_set()
 
-    def fill_domains(self):
-        """Заполняет поле 'Домены' значениями из config.DEFAULT_DOMAINS."""
-        self.domains_text.config(state=tk.NORMAL)
-        self.domains_text.delete("1.0", tk.END)
-        self.domains_text.insert("1.0", "\n".join(DEFAULT_DOMAINS))
-        self.domains_text.config(state=tk.DISABLED)
+        # Флаг закрытия окна
+        state = {"is_closed": False}
+
+        def on_close():
+            state["is_closed"] = True
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+        bg_color = self.root.cget("bg")
+        win.configure(bg=bg_color)
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        txt = scrolledtext.ScrolledText(frame, wrap=tk.WORD, font=UI.log_font, state=tk.DISABLED)
+        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        txt.tag_config("ok", foreground="#2ecc71")
+        txt.tag_config("err", foreground="#e74c3c")
+        txt.tag_config("warn", foreground="#f39c12")
+        txt.tag_config("info", foreground="#3498db")
+
+        # Безопасная запись в лог
+        def _log(msg, tag=None):
+            if state["is_closed"]:
+                return
+            try:
+                win.after(0, lambda: _insert_log(msg, tag))
+            except tk.TclError:
+                pass
+            
+        def _insert_log(msg, tag):
+            if state["is_closed"]:
+                return
+            try:
+                txt.config(state=tk.NORMAL)
+                if tag:
+                    txt.insert(tk.END, msg + "\n", tag)
+                else:
+                    txt.insert(tk.END, msg + "\n")
+                txt.see(tk.END)
+                txt.config(state=tk.DISABLED)
+            except tk.TclError:
+                pass
+
+        # Создаем кнопку закрытия 
+        btn_close = ttk.Button(frame, text="Пожалуйста, подождите...", state=tk.DISABLED)
+        btn_close.pack()
+
+        self._test_running = True
+        self.start_btn.config(state=tk.DISABLED)
+
+        def _finish_test():
+            """Разблокирует кнопку закрытия."""
+            if state["is_closed"]:
+                return
+            btn_close.config(state=tk.NORMAL, text="Закрыть", command=on_close)
+
+            self._test_running = False
+            if self.thread is None:
+                self.start_btn.config(state=tk.NORMAL)
+
+        def worker():
+            _log("=== Запуск диагностики ===", "info")
+            
+            # Шаг 1: Права
+            _log("Шаг 1: Проверка прав администратора...")
+            if state["is_closed"]: return
+            if is_admin():
+                _log("✅ Права администратора: ДА", "ok")
+            else:
+                _log("❌ Права администратора: НЕТ", "err")
+                _log("   Запустите программу от имени администратора!", "warn")
+                win.after(0, _finish_test)
+                return
+
+            # Шаг 2: pydivert
+            _log("\nШаг 2: Проверка библиотеки pydivert...")
+            if state["is_closed"]: return
+            if pydivert is None:
+                _log("❌ pydivert НЕ УСТАНОВЛЕН", "err")
+                _log("   Выполните: pip install pydivert", "warn")
+                win.after(0, _finish_test)
+                return
+            else:
+                _log("✅ pydivert: OK", "ok")
+
+            # Шаг 3: DNS
+            _log("\nШаг 3: Проверка подмены DNS...")
+            if state["is_closed"]: return
+            bad_dns = []
+            sample = DNS_CHECK_DOMAINS
+            resolved = 0
+            for d in sample:
+                if state["is_closed"]: return
+                try:
+                    ip = socket.gethostbyname(d)
+                    resolved += 1
+                    if _ip_is_local(ip, True):
+                        bad_dns.append((d, ip))
+                except Exception:
+                    pass
+            
+            if bad_dns:
+                for d, ip in bad_dns:
+                    _log(f"⚠ {d} -> {ip} (похоже на подмену DNS)", "warn")
+                _log("⚠ Смените DNS на 8.8.8.8 или 1.1.1.1", "warn")
+            elif resolved == 0:
+                _log("⚠ Не удалось разрешить ни один домен (проверьте интернет)", "warn")
+            else:
+                _log(f"✅ DNS работает нормально ({resolved}/{len(sample)})", "ok")
+
+            _log("\nШаг 3.5: Проверка брандмауэра Windows...")
+            if state["is_closed"]: return
+            try:
+                # Вызываем системную утилиту netsh и читаем ответ
+                res = subprocess.run(
+                    ['netsh', 'advfirewall', 'show', 'allprofiles'],
+                    capture_output=True, text=True, encoding='cp866', errors='ignore',
+                    creationflags=subprocess.CREATE_NO_WINDOW 
+                )    
+
+                out = res.stdout.upper()
+                
+                # Проверяем, есть ли в ответе "ON" (англ) или "ВКЛ" (рус)
+                if "ON" in out or "ВКЛ" in out:
+                    _log("⚠ Брандмауэр Windows включен.", "warn")
+                    _log("   Если обход не работает, разрешите Python и PY-DPI в брандмауэре.", "info")
+                else:
+                    _log("✅ Брандмауэр Windows выключен (или не блокирует).", "ok")
+            except Exception as e:
+                _log(f"ℹ Не удалось проверить брандмауэр: {e}", "info")
+
+            # Шаг 4: WinDivert
+            _log(f"\nШаг 4: Тест драйвера WinDivert ({CONFIG.test_duration_s} сек)...")
+            if state["is_closed"]: return
+            
+            stop_ev = threading.Event()
+            
+            def check_closed():
+                if state["is_closed"]:
+                    stop_ev.set()
+                else:
+                    try: win.after(100, check_closed)
+                    except tk.TclError: pass
+            
+            win.after(100, check_closed)
+
+            w = None
+            recv_q = queue.Queue(maxsize=RT.packet_queue_maxsize)
+            n = 0
+            
+            try:
+                w = pydivert.WinDivert(CONFIG.windivert_test_filter)
+                w.open()
+            except Exception as e:
+                _log(f"❌ Ошибка открытия WinDivert: {e}", "err")
+                win.after(0, _finish_test)
+                return
+            
+            _log("Драйвер открыт. Пересылаю пакеты...", "info")
+            
+            def receiver():
+                while not stop_ev.is_set():
+                    try:
+                        p = w.recv()
+                    except Exception:
+                        return
+                    try:
+                        recv_q.put(p, timeout=0.3)
+                    except queue.Full:
+                        try: w.send(p)
+                        except: return
+
+            rt = threading.Thread(target=receiver, daemon=True)
+            rt.start()
+
+            t0 = time.time()
+            while time.time() - t0 < CONFIG.test_duration_s and not stop_ev.is_set():
+                try:
+                    p = recv_q.get(timeout=0.2)
+                    w.send(p)
+                    n += 1
+                except queue.Empty:
+                    continue
+                except Exception:
+                    pass
+
+            stop_ev.set()
+            
+            # Дренаж
+            while True:
+                try:
+                    p = recv_q.get_nowait()
+                    w.send(p)
+                    n += 1
+                except queue.Empty:
+                    break
+                except Exception:
+                    pass
+            
+            try: w.close()
+            except: pass
+            
+            if not state["is_closed"]:
+                if n > 0:
+                    _log(f"✅ Тест пройден: успешно переслано {n} пакетов", "ok")
+                else:
+                    _log("⚠ Тест завершен, но переслано 0 пакетов. Нет трафика?", "warn")
+                _log("\n=== Диагностика завершена ===", "info")
+                
+                # Разблокируем кнопку
+                win.after(0, _finish_test)
+
+        # Запускаем поток
+        threading.Thread(target=worker, daemon=True).start()
+
+    def run_auto_test(self):
+        """Открывает окно авто-подбора режима."""
+        if self.thread is not None:
+            messagebox.showinfo("Авто-тест", "Сначала остановите обход.")
+            return
+            
+        if not is_admin():
+            messagebox.showerror("Ошибка", "Нужны права администратора.")
+            return
+
+        # Создаем отдельное окно
+        win = tk.Toplevel(self.root)
+        win.title("Авто-подбор режима")
+        win.geometry(UI.auto_window_size)
+        win.transient(self.root)
+        win.grab_set()
+        self._center_window(win) # Центрируем (метод мы добавляли ранее)
+
+        bg_color = self.root.cget("bg")
+        win.configure(bg=bg_color)
+
+        # Флаг закрытия окна
+        state = {"is_closed": False}
+
+        def on_close():
+            state["is_closed"] = True
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", on_close)
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        txt = scrolledtext.ScrolledText(frame, wrap=tk.WORD, font=UI.log_font, state=tk.DISABLED)
+        txt.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+
+        txt.tag_config("ok", foreground="#2ecc71")
+        txt.tag_config("err", foreground="#e74c3c")
+        txt.tag_config("warn", foreground="#f39c12")
+        txt.tag_config("info", foreground="#3498db")
+
+        def _log(msg, tag=None):
+            if state["is_closed"]: return
+            try:
+                win.after(0, lambda: _insert_log(msg, tag))
+            except tk.TclError:
+                pass
+            
+        def _insert_log(msg, tag):
+            if state["is_closed"]: return
+            try:
+                txt.config(state=tk.NORMAL)
+                if tag:
+                    txt.insert(tk.END, msg + "\n", tag)
+                else:
+                    txt.insert(tk.END, msg + "\n")
+                txt.see(tk.END)
+                txt.config(state=tk.DISABLED)
+            except tk.TclError:
+                pass
+
+        # Кнопка закрытия 
+        btn_close = ttk.Button(frame, text="Пожалуйста, подождите...", state=tk.DISABLED)
+        btn_close.pack()
+
+        self._test_running = True
+        self.start_btn.config(state=tk.DISABLED)
+
+        def _finish_test():
+            """Разблокирует кнопку закрытия."""
+            if state["is_closed"]: return
+            btn_close.config(state=tk.NORMAL, text="Закрыть", command=on_close)
+
+            self._test_running = False
+            if self.thread is None:
+                self.start_btn.config(state=tk.NORMAL)
+
+        def worker():
+            _log("=== Запуск авто-подбора ===", "info")
+            _log("⚠ Не используйте браузер во время теста\n", "warn")
+
+            modes_to_test = AUTO_TEST_MODES
+            results = {}
+            target_host = AUTO_TEST_HOST
+            test_domains = ["youtube.com", "googlevideo.com"]
+
+            start_mode = modes_to_test[0]
+            cfg = replace(CONFIG, split_pos=self.split_var.get())
+            engine = DpiBypass(
+                domains=test_domains, 
+                mode=start_mode, 
+                log_cb=lambda x: None, # Отключаем логи движка
+                config=cfg
+            )
+            
+            t = threading.Thread(target=engine.run, daemon=True)
+            t.start()
+            
+            _log("Инициализация драйвера WinDivert...")
+            time.sleep(AUTO_TEST_INIT_DELAY)
+            
+            try:
+                for mode in modes_to_test:
+                    if state["is_closed"]: break
+                    
+                    _log(f"\nТестирую режим: {mode}...")
+                    engine.mode = mode # МЕНЯЕМ РЕЖИМ НА ЛЕТУ
+                    time.sleep(AUTO_TEST_SWITCH_DELAY)
+                    
+                    success = False
+                    elapsed = 99.0
+                    
+                    try:
+                        t0 = time.time()
+                        context = ssl.create_default_context()
+                        with socket.create_connection((target_host, 443), timeout=AUTO_TEST_TIMEOUT) as sock:
+                            with context.wrap_socket(sock, server_hostname=target_host):
+                                success = True
+                                elapsed = time.time() - t0
+                    except Exception:
+                        success = False
+                    
+                    if success:
+                        _log(f"✅ {mode} работает! (Время: {elapsed:.2f} сек)", "ok")
+                        results[mode] = elapsed
+                    else:
+                        _log(f"❌ {mode} не сработал.", "err")
+            finally:
+                engine.stop()
+                t.join(timeout=2)
+
+            # Выбор победителя
+            if not state["is_closed"]:
+                if not results:
+                    _log("\n⚠ Ни один режим не смог подключиться.", "warn")
+                    msg = "Не удалось подобрать режим.\nВозможно, нет интернета или включен VPN."
+                    win.after(0, lambda: messagebox.showerror("Авто-тест", msg))
+                else:
+                    best_mode = min(results, key=results.get)
+                    best_time = results[best_mode]
+                    
+                    _log(f"\n🏆 Лучший режим: {best_mode} ({best_time:.2f} сек)", "ok")
+                    
+                    # Применяем режим в главном окне
+                    def apply_best():
+                        self.mode_var.set(best_mode)
+                        self._sync_mode_state()
+                    
+                    self.root.after(0, apply_best)
+                
+                # Разблокируем кнопку закрытия
+                win.after(0, _finish_test)
+
+        threading.Thread(target=worker, daemon=True).start()
