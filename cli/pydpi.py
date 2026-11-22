@@ -32,6 +32,13 @@ if sys.version_info < (3, 11):
         file=sys.stderr,
     )
 
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 try:
     import pydivert
 except ImportError:
