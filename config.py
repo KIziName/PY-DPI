@@ -202,7 +202,8 @@ AUTO_TEST_MODES = [
     "fake+disorder"
 ]
 
-AUTO_TEST_HOST = "youtube.com"    # Сайт, на котором тестируем соединение
+AUTO_TEST_HOST = "youtube.com"   # Сайт, на котором тестируем соединение
+AUTO_TEST_CDN_DOMAINS = ["googlevideo.com", "ytimg.com", "ggpht.com"]
 AUTO_TEST_INIT_DELAY = 2.0        # Секунд на инициализацию WinDivert
 AUTO_TEST_SWITCH_DELAY = 0.5      # Секунд на переключение режима
 AUTO_TEST_TIMEOUT = 5             # Таймаут подключения 

@@ -12,17 +12,16 @@ import ssl
 
 from dataclasses import replace
 from tkinter import ttk, scrolledtext, messagebox
+from bypass import DpiBypass, _ip_is_local, pydivert
+from helpers import is_admin, on_ui
 
 from config import (
     APP_TITLE, APP_AUTHOR, APP_VERSION, APP_GITHUB,
     TTL_MIN, TTL_MAX, MODES, MODES_SPLIT,
     DEFAULT_DOMAINS, DNS_CHECK_DOMAINS, DOCS_SECTIONS, CONFIG, UI, RT,
     AUTO_TEST_MODES, AUTO_TEST_HOST, AUTO_TEST_INIT_DELAY, 
-    AUTO_TEST_SWITCH_DELAY, AUTO_TEST_TIMEOUT, THEMES
+    AUTO_TEST_SWITCH_DELAY, AUTO_TEST_TIMEOUT, AUTO_TEST_CDN_DOMAINS, THEMES
 )
-
-from bypass import DpiBypass, _ip_is_local, pydivert
-from helpers import is_admin, on_ui
 
 # Точные паттерны для авто-определения уровня лога.
 _ERROR_RE = re.compile(r"(❌|\bошибка\b|\berror\b|^!!)", re.IGNORECASE)
@@ -682,16 +681,42 @@ class App:
 
                 self.log_text.config(state=tk.NORMAL)
                 try:
+                    # Группируем подряд идущие сообщения с одинаковым тегом,
+                    # чтобы вставлять их в Text одним вызовом insert().
+                    grouped = []
+                    current_tag = "___START___"  
+                    current_text = []
+                    current_time = time.strftime('%H:%M:%S')
+
                     for item in batch:
                         if isinstance(item, tuple):
                             msg, level = item
                         else:
                             msg, level = item, None
                         tag = level if level is not None else _guess_level(msg)
-                        self.log_text.insert(
-                            tk.END,
-                            f"[{time.strftime('%H:%M:%S')}] {msg}\n", tag)
                         
+                        text = f"[{current_time}] {msg}\n"
+                        
+                        if tag == current_tag:
+                            # Продолжаем накапливать текст для текущего тега
+                            current_text.append(text)
+                        else:
+                            # Тег изменился — сохраняем предыдущую группу
+                            if current_text:
+                                grouped.append(("".join(current_text), current_tag))
+                            current_tag = tag
+                            current_text = [text]
+                    
+                    # Не забываем сохранить последнюю группу
+                    if current_text:
+                        grouped.append(("".join(current_text), current_tag))
+
+                    # Вставляем сгруппированный текст
+                    for text_to_insert, tag_to_use in grouped:
+                        if tag_to_use == "___START___":
+                            tag_to_use = None
+                        self.log_text.insert(tk.END, text_to_insert, tag_to_use)
+
                     # Просто прибавляем к счётчику, сколько вставили
                     self._log_line_count += len(batch)
 
@@ -1242,7 +1267,7 @@ class App:
             modes_to_test = AUTO_TEST_MODES
             results = {}
             target_host = AUTO_TEST_HOST
-            test_domains = ["youtube.com", "googlevideo.com"]
+            test_domains = [AUTO_TEST_HOST] + AUTO_TEST_CDN_DOMAINS
 
             start_mode = modes_to_test[0]
             cfg = replace(CONFIG, split_pos=self.split_var.get())

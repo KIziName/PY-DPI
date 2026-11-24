@@ -1,5 +1,6 @@
 import ctypes
 import functools
+
 from tkinter import messagebox
 
 def is_admin():
