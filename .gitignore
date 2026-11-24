@@ -217,3 +217,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .vscode/settings.json
+scalene-profile.html
+scalene-profile.json

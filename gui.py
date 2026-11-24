@@ -1,7 +1,6 @@
 import time
 import sys
 import socket
-import traceback
 import threading
 import re
 import tkinter as tk
@@ -23,7 +22,7 @@ from config import (
 )
 
 from bypass import DpiBypass, _ip_is_local, pydivert
-from helpers import is_admin, on_ui, require_admin
+from helpers import is_admin, on_ui
 
 # Точные паттерны для авто-определения уровня лога.
 _ERROR_RE = re.compile(r"(❌|\bошибка\b|\berror\b|^!!)", re.IGNORECASE)
@@ -165,6 +164,7 @@ class App:
         self.log_text = scrolledtext.ScrolledText(
             bot, height=UI.log_text_height, state=tk.DISABLED, font=UI.log_font)
         self.log_text.pack(fill=tk.BOTH, expand=True)
+        self._log_line_count = 0 
 
         # Настройка цветов для лога
         self.log_text.tag_config("error", foreground="#e74c3c")   # Красный
@@ -193,8 +193,7 @@ class App:
         self.mode_var.trace_add("write", lambda *_: self._sync_mode_state())
 
         # Периодические поллеры для UI. Сами перезапускаются в finally.
-        self.root.after(UI.log_poll_ms, self._pump_log)
-        self.root.after(UI.log_poll_ms, self._pump_ui)
+        self.root.after(UI.log_poll_ms, self._pump_all)
         self.root.after(UI.stats_poll_ms, self._update_stats)
 
         about_frame = ttk.Frame(root, padding=(8, 0, 8, 8))
@@ -570,9 +569,7 @@ class App:
         self.auto_btn.config(state=tk.NORMAL if enabled else tk.DISABLED) 
         self.split_combo.config(state="readonly" if enabled else tk.DISABLED)
         self.bypass_all_chk.config(state=tk.NORMAL if enabled else tk.DISABLED)
-        self.dom_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
         self._sync_mode_state()
-
         self.diag_btn.config(state=tk.NORMAL if enabled else tk.DISABLED)
 
     def _sync_mode_state(self):
@@ -665,9 +662,13 @@ class App:
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete("1.0", tk.END)
         self.log_text.config(state=tk.DISABLED)
+        self._log_line_count = 0
 
-    def _pump_log(self):
-        """Переносит сообщения из очереди в UI-виджет (вызывается периодически)."""
+    #------- обработка лога-----------
+
+    def _pump_all(self):
+        """Обрабатывает обе очереди (лог + UI-колбэки) за один тик."""
+        # 1. Лог
         try:
             batch = []
             while True:
@@ -677,10 +678,11 @@ class App:
                     break
 
             if batch:
+                at_bottom = self.log_text.yview()[1] >= 0.99
+
                 self.log_text.config(state=tk.NORMAL)
                 try:
                     for item in batch:
-                        # Совместимость: если кто-то положил в очередь голую строку.
                         if isinstance(item, tuple):
                             msg, level = item
                         else:
@@ -689,25 +691,23 @@ class App:
                         self.log_text.insert(
                             tk.END,
                             f"[{time.strftime('%H:%M:%S')}] {msg}\n", tag)
+                        
+                    # Просто прибавляем к счётчику, сколько вставили
+                    self._log_line_count += len(batch)
 
-                    total = int(
-                        self.log_text.index("end-1c").split(".")[0]) - 1
-                    if total > UI.max_log_lines:
-                        self.log_text.delete(
-                            "1.0", f"{total - UI.max_log_lines + 1}.0")
-                    self.log_text.see(tk.END)
+                    if self._log_line_count > UI.max_log_lines + 50:
+                        to_delete = self._log_line_count - UI.max_log_lines
+                        self.log_text.delete("1.0", f"{to_delete + 1}.0")
+                        self._log_line_count = UI.max_log_lines
+
+                    if at_bottom:
+                        self.log_text.see(tk.END)
                 finally:
                     self.log_text.config(state=tk.DISABLED)
-        finally:
-            try:
-                self.root.after(UI.log_poll_ms, self._pump_log)
-            except tk.TclError:
-                pass
+        except Exception:
+            pass  # не даём логу сломать UI-очередь
 
-    # ── UI-очередь ────────────────────────────────────────────────────
-
-    def _pump_ui(self):
-        """Выполняет отложенные UI-колбэки (из других потоков)."""
+        # 2. UI-колбэки
         try:
             while True:
                 try:
@@ -718,11 +718,14 @@ class App:
                     func(self, *args, **kwargs)
                 except Exception:
                     pass
-        finally:
-            try:
-                self.root.after(UI.log_poll_ms, self._pump_ui)
-            except tk.TclError:
-                pass
+        except Exception:
+            pass
+
+        # Перезапуск
+        try:
+            self.root.after(UI.log_poll_ms, self._pump_all)
+        except tk.TclError:
+            pass
 
     # ── Строка статистики ─────────────────────────────────────────────
 
@@ -762,178 +765,6 @@ class App:
                 self.root.after(UI.stats_poll_ms, self._update_stats)
             except tk.TclError:
                 pass
-
-    # ── Тест WinDivert ────────────────────────────────────────────────
-
-    @require_admin(title="Тест", msg="Нужны права администратора.")
-    def test_windivert(self):
-        """Запускает тест драйвера WinDivert (пересылка пакетов)."""
-        if pydivert is None:
-            messagebox.showerror("Тест", "pip install pydivert")
-            return
-
-        if self.thread is not None:
-            messagebox.showinfo("Тест", "Сначала останови обход.")
-            return
-
-        if self._test_running:
-            return
-
-        self._test_running = True
-        self._test_stop = threading.Event()
-        self._set_controls_enabled(False)
-        self.start_btn.config(state=tk.DISABLED)
-
-        def worker():
-            self.log("— ТЕСТ: открываю WinDivert —")
-            w = None
-            stop_ev = self._test_stop
-            recv_q = queue.Queue(maxsize=RT.packet_queue_maxsize)
-            n = 0
-            rt = None
-            try:
-                if stop_ev.is_set():
-                    return
-
-                try:
-                    w = pydivert.WinDivert(CONFIG.windivert_test_filter)
-                    w.open()
-                except Exception as e:
-                    self.log(f"!! не удалось открыть WinDivert: {e}")
-                    return
-
-                if stop_ev.is_set():
-                    return
-
-                local_w = w
-
-                self.log(
-                    f"WinDivert открыт. Считаю {CONFIG.test_duration_s} сек…")
-
-                def receiver():
-                    while not stop_ev.is_set():
-                        try:
-                            p = local_w.recv()
-                        except Exception:
-                            return
-                        try:
-                            recv_q.put(p, timeout=RT.queue_put_timeout_s)
-                        except queue.Full:
-                            try:
-                                local_w.send(p)
-                            except Exception:
-                                return
-
-                rt = threading.Thread(target=receiver, daemon=True)
-                rt.start()
-
-                t0 = time.time()
-                send_error = False
-                while time.time() - t0 < CONFIG.test_duration_s:
-                    if stop_ev.is_set():
-                        break
-                    try:
-                        p = recv_q.get(timeout=RT.queue_get_timeout_s)
-                    except queue.Empty:
-                        continue
-                    try:
-                        local_w.send(p)
-                        n += 1
-                    except Exception as e:
-                        self.log(f"send err: {e}")
-                        send_error = True
-                        break
-
-                aborted = stop_ev.is_set()
-
-                stop_ev.set()
-
-                # Дренаж очереди — вернуть всё, что успело прийти.
-                while True:
-                    try:
-                        p = recv_q.get_nowait()
-                    except queue.Empty:
-                        break
-                    try:
-                        local_w.send(p)
-                        n += 1
-                    except Exception:
-                        pass
-
-                try:
-                    local_w.close()
-                except Exception:
-                    pass
-                w = None
-
-                if rt is not None and rt.is_alive():
-                    rt.join(timeout=RT.recv_join_timeout_s)
-
-                if aborted:
-                    self.log(f"— ТЕСТ прерван: переслано {n} пакетов —")
-                elif send_error:
-                    self.log(f"— ТЕСТ прерван ошибкой отправки: "
-                             f"переслано {n} пакетов —")
-                else:
-                    self.log(f"— ТЕСТ завершён: переслано {n} пакетов —")
-            except Exception:
-                for line in traceback.format_exc().splitlines():
-                    self.log("  " + line)
-            finally:
-                stop_ev.set()
-                if w is not None:
-                    try:
-                        w.close()
-                    except Exception:
-                        pass
-                self._on_test_done()
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    @on_ui
-    def _on_test_done(self):
-        """Вызывается после завершения теста (возвращает кнопки в строй)."""
-        self._test_running = False
-        if self.thread is None:
-            self._set_controls_enabled(True)
-            self.start_btn.config(state=tk.NORMAL)
-
-    # ── Проверка DNS на подмену ───────────────────────────────────────
-
-    def _check_dns_async(self):
-        """Фоновая проверка популярных доменов на подмену DNS (локальные IP)."""
-        def worker():
-            sample = DNS_CHECK_DOMAINS
-            bad = []
-            resolved = 0
-            for d in sample:
-                try:
-                    ip = socket.gethostbyname(d)
-                    resolved += 1
-                except Exception:
-                    continue
-                try:
-                    if _ip_is_local(ip, True):
-                        bad.append((d, ip))
-                except Exception:
-                    continue
-
-            for d, ip in bad:
-                self.log(f"⚠ {d} → {ip} — похоже на подмену DNS")
-
-            if bad:
-                self.log(f"⚠ Найдено {len(bad)} из {resolved} популярных "
-                         f"доменов с локальными IP — "
-                         f"проверь DNS-сервер (8.8.8.8 / 1.1.1.1)")
-            elif resolved == 0:
-                self.log("DNS-проверка: не удалось разрешить ни один домен "
-                         "(нет интернета или DNS недоступен)")
-            else:
-                self.log(f"DNS-проверка: {resolved} из {len(sample)} "
-                         f"популярных доменов — ОК")
-
-        threading.Thread(target=worker, daemon=True,
-                         name="dns-check").start()
 
     # ── Старт / стоп обхода ───────────────────────────────────────────
 
