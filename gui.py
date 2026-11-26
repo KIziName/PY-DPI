@@ -7,11 +7,11 @@ import tkinter as tk
 import webbrowser
 import queue
 import os
-import subprocess
-import ssl
+import json
+import datetime
 
 from dataclasses import replace
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, filedialog 
 from bypass import DpiBypass, _ip_is_local, pydivert
 from helpers import is_admin, on_ui
 
@@ -84,6 +84,9 @@ class App:
         # Добавляем кнопки справа налево 
         self.start_btn = ttk.Button(btn_row, text="▶ Старт", command=self.toggle)
         self.start_btn.pack(side=tk.RIGHT)
+
+        ttk.Button(btn_row, text="Сохранить лог", command=self._save_log_to_file
+                   ).pack(side=tk.RIGHT, padx=5)
 
         ttk.Button(btn_row, text="Сбросить лог", command=self.clear_log
                    ).pack(side=tk.RIGHT, padx=5)
@@ -204,6 +207,7 @@ class App:
         self.log(f"Python: {sys.version.split()[0]}")
       
         self._load_domains()
+        self._load_settings()
         self._sync_mode_state()
         self._apply_theme()
 
@@ -320,13 +324,84 @@ class App:
 
         win.bind("<Escape>", lambda e: win.destroy())
 
+    def _get_settings_path(self):
+        """Возвращает путь к файлу настроек в AppData."""
+        appdata = os.environ.get('APPDATA')
+        if appdata:
+            base_dir = os.path.join(appdata, 'PY-DPI')
+        else:
+            base_dir = os.path.join(os.path.expanduser('~'), '.config', 'PY-DPI')
+        os.makedirs(base_dir, exist_ok=True)
+        return os.path.join(base_dir, 'settings.json')
+
+    def _load_settings(self):
+        """Загружает настройки из JSON при запуске."""
+        path = self._get_settings_path()
+        if not os.path.exists(path):
+            return  # Файла нет — используем дефолтные настройки
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                
+            # Применяем настройки (с проверкой на всякий случай)
+            if "theme" in data: self.theme_var.set(data["theme"])
+            if "mode" in data: self.mode_var.set(data["mode"])
+            if "ttl" in data: self.ttl_var.set(str(data["ttl"]))
+            if "split" in data: self.split_var.set(data["split"])
+            if "repeats" in data: self.repeats_var.set(str(data["repeats"]))
+            if "badsum" in data: self.badsum_var.set(bool(data["badsum"]))
+            if "bypass_all" in data: self.bypass_all_var.set(bool(data["bypass_all"]))
+        except Exception as e:
+            self.log(f"⚠ Ошибка загрузки настроек: {e}")
+
+    def _save_settings(self):
+        """Сохраняет текущие настройки в JSON (с валидацией)."""
+        path = self._get_settings_path()
+
+        # --- ВАЛИДАЦИЯ TTL ---
+        try:
+            ttl = int(self.ttl_var.get())
+            if not TTL_MIN <= ttl <= TTL_MAX:
+                ttl = CONFIG.fake_ttl  
+        except (ValueError, TypeError):
+            ttl = CONFIG.fake_ttl
+
+        # --- ВАЛИДАЦИЯ ПОВТОРОВ ---
+        try:
+            repeats = int(self.repeats_var.get())
+            if not 1 <= repeats <= 5:
+                repeats = CONFIG.fake_repeats
+        except (ValueError, TypeError):
+            repeats = CONFIG.fake_repeats
+
+        # --- ВАЛИДАЦИЯ SPLIT ---
+        split_pos = self.split_var.get()
+        if split_pos not in MODES_SPLIT:
+            split_pos = CONFIG.split_pos
+
+        data = {
+            "theme": self.theme_var.get(),
+            "mode": self.mode_var.get(),
+            "ttl": ttl,          
+            "split": split_pos,
+            "repeats": repeats,   
+            "badsum": self.badsum_var.get(),
+            "bypass_all": self.bypass_all_var.get()
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            self.log(f"❌ Ошибка сохранения настроек: {e}")
+
     def _get_domains_path(self):
         """Возвращает путь к файлу доменов в папке AppData."""
         appdata = os.environ.get('APPDATA')
         if appdata:
             base_dir = os.path.join(appdata, 'PY-DPI')
         else:
-            # Фолбэк, если вдруг AppData нет (маловероятно)
+            # Фолбэк, если вдруг AppData нет 
             base_dir = os.path.join(os.path.expanduser('~'), '.config', 'PY-DPI')
             
         os.makedirs(base_dir, exist_ok=True)
@@ -610,6 +685,7 @@ class App:
 
     def _on_close(self):
         """Корректное завершение работы: остановка потоков, очистка, выход."""
+        self._save_settings()
         if self._test_running:
             try:
                 self._test_stop.set()
@@ -650,11 +726,42 @@ class App:
         except Exception:
             pass
 
-    # ── Лог ───────────────────────────────────────────────────────────
 
     def log(self, msg, level=None):
 
         self.log_queue.put((str(msg), level))
+
+    def _save_log_to_file(self):
+        """Сохраняет текущий лог в текстовый файл."""
+        if self._log_line_count == 0:
+            messagebox.showinfo("Лог", "Лог пуст, нечего сохранять.")
+            return
+        # Генерируем имя файла с текущей датой и временем
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        default_name = f"PY-DPI_log_{timestamp}.txt"
+        
+        # Открываем проводник, чтобы пользователь сам выбрал папку
+        filepath = filedialog.asksaveasfilename(
+            initialfile=default_name,
+            defaultextension=".txt",
+            filetypes=[("Текстовые файлы", "*.txt"), ("Все файлы", "*.*")],
+            title="Сохранить лог"
+        )
+        
+        # Если пользователь нажал «Отмена», выходим
+        if not filepath:
+            return
+            
+        try:
+            log_content = self.log_text.get("1.0", tk.END)
+            
+            # Записываем в файл (UTF-8, чтобы русские буквы не ломались)
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(log_content)
+                
+            self.log(f"💾 Лог успешно сохранен: {filepath}")
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось сохранить лог:\n{e}")
 
     def clear_log(self):
         """Очищает окно лога."""
@@ -799,6 +906,7 @@ class App:
             self._stop_bypass()
             return
 
+
         if not is_admin():
             messagebox.showerror(
                 "Ошибка",
@@ -861,6 +969,8 @@ class App:
             split_pos=split_pos,
             fake_repeats=repeats,
         )
+
+        self._save_settings()
 
         self.status.set("Запускаю…")
         self.start_btn.config(text="■ Стоп")
@@ -958,6 +1068,8 @@ class App:
 
     def run_diagnostics(self):
         """Запускает окно диагностики с проверкой WinDivert и DNS."""
+        import subprocess
+
         win = tk.Toplevel(self.root)
         win.title("Диагностика PY-DPI")
         win.geometry(UI.diag_window_size)
@@ -1185,6 +1297,8 @@ class App:
 
     def run_auto_test(self):
         """Открывает окно авто-подбора режима."""
+        import ssl
+
         if self.thread is not None:
             messagebox.showinfo("Авто-тест", "Сначала остановите обход.")
             return

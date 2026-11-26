@@ -5,7 +5,7 @@ from dataclasses import dataclass
 # --- Информация о приложении ---
 APP_TITLE = "PY-DPI"
 APP_AUTHOR = "KiziName"
-APP_VERSION = "V1.5.1"
+APP_VERSION = "V1.5.2"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
 # --- Тексты для окна с ошибкой прав администратора ---
