@@ -5,7 +5,7 @@ from dataclasses import dataclass
 # --- Информация о приложении ---
 APP_TITLE = "PY-DPI"
 APP_AUTHOR = "KiziName"
-APP_VERSION = "V1.5"
+APP_VERSION = "V1.5.1"
 APP_GITHUB = "https://github.com/KIziName/PY-DPI"
 
 # --- Тексты для окна с ошибкой прав администратора ---
@@ -112,7 +112,7 @@ class UiConfig:
     dom_window_size: str = "550x650"
     docs_window_size: str = "640x560"
 
-    log_poll_ms: int = 300
+    log_poll_ms: int = 500
     stats_poll_ms: int = 1500
     max_log_lines: int = 500
 
@@ -202,7 +202,8 @@ AUTO_TEST_MODES = [
     "fake+disorder"
 ]
 
-AUTO_TEST_HOST = "youtube.com"    # Сайт, на котором тестируем соединение
+AUTO_TEST_HOST = "youtube.com"   # Сайт, на котором тестируем соединение
+AUTO_TEST_CDN_DOMAINS = ["googlevideo.com", "ytimg.com", "ggpht.com"]
 AUTO_TEST_INIT_DELAY = 2.0        # Секунд на инициализацию WinDivert
 AUTO_TEST_SWITCH_DELAY = 0.5      # Секунд на переключение режима
 AUTO_TEST_TIMEOUT = 5             # Таймаут подключения 

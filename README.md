@@ -61,8 +61,6 @@
 - `python pydpi.py start --mode triple_disorder`
 - `python pydpi.py start --mode fake+split`
 - `python pydpi.py start --all`
-- `python pydpi.py test`
-- `python pydpi.py dns`
 
 (Полный список в папке cli в файле cmd.txt)
 

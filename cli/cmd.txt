@@ -61,13 +61,6 @@ python pydpi.py start --all --mode fake+split
 # ПОЛНАЯ ДИАГНОСТИКА: права, драйвер, DNS, фаервол и тест пакетов в одной команде
 python pydpi.py diagnose
 
-# Проверить только, что WinDivert открывается (5 сек)
-python pydpi.py test
-
-# Проверить только DNS на подмену
-python pydpi.py dns
-
-
 # ──────────── Справка ────────────
 
 # Посмотреть все режимы и примеры
@@ -79,10 +72,8 @@ python pydpi.py --version
 # Полная справка
 python pydpi.py --help
 python pydpi.py start --help
-python pydpi.py test --help
 python pydpi.py auto --help
 python pydpi.py diagnose --help
-python pydpi.py dns --help
 python pydpi.py list-modes --help
 
 # Рекомендуемая последовательность (если не пробивает) 

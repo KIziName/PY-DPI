@@ -8,14 +8,11 @@ import ipaddress
 import queue
 import random
 import signal
-import socket
 import struct
 import sys
 import threading
 import time
 import traceback
-import subprocess
-import ssl
 
 from dataclasses import dataclass, replace
 
@@ -46,7 +43,7 @@ except ImportError:
 
 
 APP_TITLE = "PY-DPI"
-APP_VERSION = "V1.5-CLI"
+APP_VERSION = "V1.5.1-CLI"
 
 PORT_HTTP = 80
 PORT_HTTPS = 443
@@ -119,6 +116,16 @@ IP_WHITELIST_V6 = (
 _WHITELIST_V4_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V4)
 _WHITELIST_V6_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V6)
 
+AUTO_TEST_HOST = "youtube.com"
+AUTO_TEST_CDN_DOMAINS = ["googlevideo.com", "ytimg.com", "ggpht.com"]
+
+AUTO_TEST_MODES = [
+    "split", "disorder", "triple_split", 
+    "triple_disorder", "fake+split", "fake+disorder"
+]
+AUTO_TEST_INIT_DELAY = 2.0
+AUTO_TEST_SWITCH_DELAY = 0.5
+AUTO_TEST_TIMEOUT = 5  
 
 @dataclass(frozen=True, slots=True)
 class DpiConfig:
@@ -1286,6 +1293,7 @@ def cmd_list_modes(_args):
 
 def cmd_dns(_args):
     """Проверяет домены на подмену DNS"""
+    import socket
     print(f"Проверка {len(DNS_CHECK_DOMAINS)} доменов…")
     bad = []
     resolved = 0
@@ -1313,6 +1321,9 @@ def cmd_dns(_args):
 
 def cmd_diagnose(_args):
     """Полная диагностика (как в GUI)"""
+    import socket
+    import subprocess
+
     print("=== Запуск диагностики ===")
     
     # 1. Права
@@ -1439,6 +1450,9 @@ def cmd_diagnose(_args):
 
 def cmd_auto(args):
     """Авто-подбор режима (как в GUI)"""
+    import socket
+    import ssl
+    
     if pydivert is None:
         print("!! pydivert не установлен")
         return 2
@@ -1449,10 +1463,10 @@ def cmd_auto(args):
     print("=== Запуск авто-подбора ===")
     print("⚠ Не используйте браузер во время теста\n")
 
-    modes = ["split", "disorder", "triple_split", "triple_disorder", "fake+split", "fake+disorder"]
+    modes = AUTO_TEST_MODES
     results = {}
-    target_host = "youtube.com"
-    test_domains = ["youtube.com", "googlevideo.com"]
+    target_host = AUTO_TEST_HOST
+    test_domains = [AUTO_TEST_HOST] + AUTO_TEST_CDN_DOMAINS
     
     cfg = DpiConfig()
     start_mode = modes[0]
@@ -1462,13 +1476,13 @@ def cmd_auto(args):
     t.start()
     
     print("Инициализация драйвера WinDivert...")
-    time.sleep(2.0)
+    time.sleep(AUTO_TEST_INIT_DELAY)
     
     try:
         for mode in modes:
             print(f"Тестирую режим: {mode}...")
             engine.mode = mode
-            time.sleep(0.5)
+            time.sleep(AUTO_TEST_SWITCH_DELAY)
             
             success = False
             elapsed = 99.0
@@ -1476,7 +1490,8 @@ def cmd_auto(args):
             try:
                 t0 = time.time()
                 context = ssl.create_default_context()
-                with socket.create_connection((target_host, 443), timeout=4) as sock:
+                with socket.create_connection((target_host, 443), timeout=AUTO_TEST_TIMEOUT) as sock:
+
                     with context.wrap_socket(sock, server_hostname=target_host):
                         success = True
                         elapsed = time.time() - t0
@@ -1502,99 +1517,6 @@ def cmd_auto(args):
         print(f"Используйте его: pydpi.py start --mode {best_mode}")
         
     return 0
-
-
-def cmd_test(args):
-    """Тестовый запуск WinDivert (проверка пересылки пакетов)"""
-    if pydivert is None:
-        print("!! pydivert не установлен: pip install pydivert")
-        return 2
-    if not is_admin():
-        print("!! Нужны права администратора.")
-        return 1
-
-    cfg = DpiConfig()
-    duration = max(1, int(getattr(args, "duration", RT_TEST_DURATION_S)))
-    print(f"Тест WinDivert, {duration} сек…")
-    stop_ev = threading.Event()
-    recv_q = queue.Queue(maxsize=RT_PACKET_QUEUE_MAX)
-    n = 0
-    w = None
-    rt = None
-    rc = 0
-    try:
-        try:
-            w = pydivert.WinDivert(cfg.windivert_filter)
-            w.open()
-        except Exception as e:
-            print(f"!! не удалось открыть WinDivert: {e}")
-            return 1
-
-        local_w = w
-
-        def receiver():
-            while not stop_ev.is_set():
-                try:
-                    p = local_w.recv()
-                except Exception:
-                    return
-                try:
-                    recv_q.put(p, timeout=RT_QUEUE_PUT_TIMEOUT_S)
-                except queue.Full:
-                    try:
-                        local_w.send(p)
-                    except Exception:
-                        return
-
-        rt = threading.Thread(target=receiver, daemon=True)
-        rt.start()
-
-        t0 = time.time()
-        while time.time() - t0 < duration:
-            if stop_ev.is_set():
-                break
-            try:
-                p = recv_q.get(timeout=RT_QUEUE_GET_TIMEOUT_S)
-            except queue.Empty:
-                continue
-            try:
-                local_w.send(p)
-                n += 1
-            except Exception as e:
-                print(f"send err: {e}")
-                rc = 1
-                break
-
-        stop_ev.set()
-
-        while True:
-            try:
-                p = recv_q.get_nowait()
-            except queue.Empty:
-                break
-            try:
-                local_w.send(p)
-                n += 1
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"!! ошибка теста: {e}")
-        rc = 1
-    finally:
-        stop_ev.set()
-        if w is not None:
-            try:
-                w.close()
-            except Exception:
-                pass
-        if rt is not None and rt.is_alive():
-            rt.join(timeout=RT_RECV_JOIN_TIMEOUT_S)
-
-    if rc == 0:
-        print(f"Тест завершён: переслано {n} пакетов.")
-    else:
-        print(f"Тест завершён с ошибкой: переслано {n} пакетов.")
-    return rc
 
 
 def cmd_start(args):
@@ -1700,12 +1622,6 @@ def build_parser():
 
     sp = sub.add_parser("auto", help="авто-подбор лучшего режима обхода")
     sp.set_defaults(func=cmd_auto)
-
-    sp = sub.add_parser("test", help="простой тест WinDivert (пересылка пакетов)")
-    sp.add_argument("--duration", type=int, default=RT_TEST_DURATION_S,
-                    help=f"длительность теста в секундах "
-                         f"(по умолчанию {RT_TEST_DURATION_S})")
-    sp.set_defaults(func=cmd_test)
 
     sp = sub.add_parser("dns", help="проверка DNS на подмену")
     sp.set_defaults(func=cmd_dns)
