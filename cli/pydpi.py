@@ -8,14 +8,11 @@ import ipaddress
 import queue
 import random
 import signal
-import socket
 import struct
 import sys
 import threading
 import time
 import traceback
-import subprocess
-import ssl
 
 from dataclasses import dataclass, replace
 
@@ -122,6 +119,13 @@ _WHITELIST_V6_NETS = tuple(ipaddress.ip_network(c) for c in IP_WHITELIST_V6)
 AUTO_TEST_HOST = "youtube.com"
 AUTO_TEST_CDN_DOMAINS = ["googlevideo.com", "ytimg.com", "ggpht.com"]
 
+AUTO_TEST_MODES = [
+    "split", "disorder", "triple_split", 
+    "triple_disorder", "fake+split", "fake+disorder"
+]
+AUTO_TEST_INIT_DELAY = 2.0
+AUTO_TEST_SWITCH_DELAY = 0.5
+AUTO_TEST_TIMEOUT = 5  
 
 @dataclass(frozen=True, slots=True)
 class DpiConfig:
@@ -1289,6 +1293,7 @@ def cmd_list_modes(_args):
 
 def cmd_dns(_args):
     """Проверяет домены на подмену DNS"""
+    import socket
     print(f"Проверка {len(DNS_CHECK_DOMAINS)} доменов…")
     bad = []
     resolved = 0
@@ -1316,6 +1321,9 @@ def cmd_dns(_args):
 
 def cmd_diagnose(_args):
     """Полная диагностика (как в GUI)"""
+    import socket
+    import subprocess
+
     print("=== Запуск диагностики ===")
     
     # 1. Права
@@ -1442,6 +1450,9 @@ def cmd_diagnose(_args):
 
 def cmd_auto(args):
     """Авто-подбор режима (как в GUI)"""
+    import socket
+    import ssl
+    
     if pydivert is None:
         print("!! pydivert не установлен")
         return 2
@@ -1452,7 +1463,7 @@ def cmd_auto(args):
     print("=== Запуск авто-подбора ===")
     print("⚠ Не используйте браузер во время теста\n")
 
-    modes = ["split", "disorder", "triple_split", "triple_disorder", "fake+split", "fake+disorder"]
+    modes = AUTO_TEST_MODES
     results = {}
     target_host = AUTO_TEST_HOST
     test_domains = [AUTO_TEST_HOST] + AUTO_TEST_CDN_DOMAINS
@@ -1465,13 +1476,13 @@ def cmd_auto(args):
     t.start()
     
     print("Инициализация драйвера WinDivert...")
-    time.sleep(2.0)
+    time.sleep(AUTO_TEST_INIT_DELAY)
     
     try:
         for mode in modes:
             print(f"Тестирую режим: {mode}...")
             engine.mode = mode
-            time.sleep(0.5)
+            time.sleep(AUTO_TEST_SWITCH_DELAY)
             
             success = False
             elapsed = 99.0
@@ -1479,7 +1490,8 @@ def cmd_auto(args):
             try:
                 t0 = time.time()
                 context = ssl.create_default_context()
-                with socket.create_connection((target_host, 443), timeout=4) as sock:
+                with socket.create_connection((target_host, 443), timeout=AUTO_TEST_TIMEOUT) as sock:
+
                     with context.wrap_socket(sock, server_hostname=target_host):
                         success = True
                         elapsed = time.time() - t0
