@@ -528,7 +528,7 @@ class DpiBypass:
 
         if packet.tcp is None:
             # Блокируем UDP/443 (QUIC), чтобы браузер перешел на TCP
-            if packet.udp is not None and self.cfg.block_quic:
+            if packet.udp is not None and self.cfg.block_quic:  # noqa: SIM102
                 if not self._is_dst_local(packet):
                     try:
                         if packet.udp.dst_port == PORT_HTTPS:
@@ -715,9 +715,7 @@ class DpiBypass:
             return False
         if payload[0] != TLS_CONTENT_HANDSHAKE:
             return False
-        if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
-            return False
-        return True
+        return payload[5] == TLS_HANDSHAKE_CLIENT_HELLO
 
     @staticmethod
     def _tls_record_incomplete(payload):
@@ -880,10 +878,7 @@ class DpiBypass:
         if payload[5] != TLS_HANDSHAKE_CLIENT_HELLO:
             return None
 
-        record_len = _U16.unpack_from(payload, 3)[0]
-        record_end = TLS_RECORD_HEADER_LEN + record_len
-        # Не проверяем record_end > len(payload) - пакет может быть фрагментирован
-
+        
         pos = TLS_RECORD_HEADER_LEN + TLS_HANDSHAKE_HEADER_LEN
         if pos + TLS_CLIENT_HELLO_VERSION_LEN + TLS_CLIENT_HELLO_RANDOM_LEN > len(payload):
             return None
@@ -983,8 +978,7 @@ class DpiBypass:
         """Разрезает пакет и отправляет (с опциональным добавлением фейков или 3-way сплитом)."""
         split_at = self._split_offset_for_match(host_off, hostname)
 
-        if split_at < 1:
-            split_at = 1
+        split_at = max(split_at, 1)
         if split_at >= len(payload) - 1:
             # Сплит невозможен — отправляем как есть.
             self._send_with_checksum(packet)

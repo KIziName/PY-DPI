@@ -379,7 +379,7 @@ class App:
                 data = json.load(f)
 
             if not isinstance(data, dict):
-                raise ValueError("Корень JSON должен быть объектом")
+                raise TypeError("Корень JSON должен быть объектом")  
 
             # Тема
             theme = data.get("theme")
@@ -393,7 +393,7 @@ class App:
 
             # TTL
             ttl = data.get("ttl")
-            if isinstance(ttl, int) and not isinstance(ttl, bool):
+            if isinstance(ttl, int) and not isinstance(ttl, bool):  # noqa: SIM102
                 if TTL_MIN <= ttl <= TTL_MAX:
                     self.ttl_var.set(str(ttl))
 
@@ -404,7 +404,7 @@ class App:
 
             # Повторы
             repeats = data.get("repeats")
-            if isinstance(repeats, int) and not isinstance(repeats, bool):
+            if isinstance(repeats, int) and not isinstance(repeats, bool):  # noqa: SIM102
                 if 1 <= repeats <= 5:
                     self.repeats_var.set(str(repeats))
 
@@ -1316,8 +1316,12 @@ class App:
                 # Вызываем системную утилиту netsh и читаем ответ
                 res = subprocess.run(
                     ['netsh', 'advfirewall', 'show', 'allprofiles'],
-                    capture_output=True, text=True, encoding='cp866', errors='ignore',
-                    creationflags=subprocess.CREATE_NO_WINDOW 
+                    capture_output=True,
+                    text=True,
+                    encoding='cp866',
+                    errors='ignore',
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    check=False,
                 )    
 
                 out = res.stdout.upper()
@@ -1364,13 +1368,16 @@ class App:
                 while not stop_ev.is_set():
                     try:
                         p = w.recv()
-                    except Exception:
+                    except OSError:
                         return
+
+                try:
+                    recv_q.put(p, timeout=0.3)
+                except queue.Full:
                     try:
-                        recv_q.put(p, timeout=0.3)
-                    except queue.Full:
-                        try: w.send(p)
-                        except: return
+                        w.send(p)
+                    except OSError:
+                        return
 
             rt = threading.Thread(target=receiver, daemon=True)
             rt.start()
@@ -1383,8 +1390,8 @@ class App:
                     n += 1
                 except queue.Empty:
                     continue
-                except Exception:
-                    pass
+                except OSError:
+                    break
 
             stop_ev.set()
             
@@ -1392,15 +1399,19 @@ class App:
             while True:
                 try:
                     p = recv_q.get_nowait()
-                    w.send(p)
-                    n += 1
                 except queue.Empty:
                     break
-                except Exception:
-                    pass
+
+                try:
+                    w.send(p)
+                    n += 1
+                except OSError:
+                    break
             
-            try: w.close()
-            except: pass
+                try:
+                    w.close()
+                except OSError as e:
+                    _log(f"Не удалось закрыть соединение: {e}", "warn")
             
             if not state["is_closed"]:
                 if n > 0:
