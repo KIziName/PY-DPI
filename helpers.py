@@ -1,7 +1,7 @@
 import ctypes
 import functools
-
 from tkinter import messagebox
+
 
 def is_admin():
     """Проверяет, запущен ли скрипт с правами администратора (Windows API)"""

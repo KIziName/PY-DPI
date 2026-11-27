@@ -1,27 +1,42 @@
-import time
-import sys
-import socket
-import threading
+import datetime
+import json
+import os
+import queue
 import re
+import socket
+import sys
+import threading
+import time
 import tkinter as tk
 import webbrowser
-import queue
-import os
-import json
-import datetime
-
 from dataclasses import replace
-from tkinter import ttk, scrolledtext, messagebox, filedialog 
-from bypass import DpiBypass, _ip_is_local, pydivert
-from helpers import is_admin, on_ui
+from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+from bypass import DpiBypass, _ip_is_local, pydivert
 from config import (
-    APP_TITLE, APP_AUTHOR, APP_VERSION, APP_GITHUB,
-    TTL_MIN, TTL_MAX, MODES, MODES_SPLIT,
-    DEFAULT_DOMAINS, DNS_CHECK_DOMAINS, DOCS_SECTIONS, CONFIG, UI, RT,
-    AUTO_TEST_MODES, AUTO_TEST_HOST, AUTO_TEST_INIT_DELAY, 
-    AUTO_TEST_SWITCH_DELAY, AUTO_TEST_TIMEOUT, AUTO_TEST_CDN_DOMAINS, THEMES
+    APP_AUTHOR,
+    APP_GITHUB,
+    APP_TITLE,
+    APP_VERSION,
+    AUTO_TEST_CDN_DOMAINS,
+    AUTO_TEST_HOST,
+    AUTO_TEST_INIT_DELAY,
+    AUTO_TEST_MODES,
+    AUTO_TEST_SWITCH_DELAY,
+    AUTO_TEST_TIMEOUT,
+    CONFIG,
+    DEFAULT_DOMAINS,
+    DNS_CHECK_DOMAINS,
+    DOCS_SECTIONS,
+    MODES,
+    MODES_SPLIT,
+    RT,
+    THEMES,
+    TTL_MAX,
+    TTL_MIN,
+    UI,
 )
+from helpers import is_admin, on_ui
 
 # Точные паттерны для авто-определения уровня лога.
 _ERROR_RE = re.compile(r"(❌|\bошибка\b|\berror\b|^!!)", re.IGNORECASE)
@@ -161,12 +176,29 @@ class App:
         self.current_domains = []
 
         # ── Лог ────────────────────────────────────────────────────────
-        bot = ttk.LabelFrame(root, text="Лог", padding=5)
+        bot = ttk.LabelFrame(root, padding=5)
         bot.pack(fill=tk.BOTH, expand=True, padx=8, pady=5)
-        self.log_text = scrolledtext.ScrolledText(
-            bot, height=UI.log_text_height, state=tk.DISABLED, font=UI.log_font)
-        self.log_text.pack(fill=tk.BOTH, expand=True)
+
+        log_header = ttk.Frame(bot)
+        log_header.pack(fill=tk.X, pady=(0, 5))
+
+        ttk.Label(log_header, text="Лог").pack(side=tk.LEFT)
+
+        self.log_count_var = tk.StringVar(value="Строк: 0")
         self._log_line_count = 0 
+        ttk.Label(
+            log_header,
+            textvariable=self.log_count_var
+        ).pack(side=tk.RIGHT)
+
+        self.log_text = scrolledtext.ScrolledText(
+            bot,
+            height=UI.log_text_height,
+            state=tk.DISABLED,
+            font=UI.log_font
+        )
+
+        self.log_text.pack(fill=tk.BOTH, expand=True)
 
         # Настройка цветов для лога
         self.log_text.tag_config("error", foreground="#e74c3c")   # Красный
@@ -334,40 +366,74 @@ class App:
         os.makedirs(base_dir, exist_ok=True)
         return os.path.join(base_dir, 'settings.json')
 
+    
     def _load_settings(self):
         """Загружает настройки из JSON при запуске."""
         path = self._get_settings_path()
+
         if not os.path.exists(path):
-            return  # Файла нет — используем дефолтные настройки
+            return
 
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                
-            # Применяем настройки (с проверкой на всякий случай)
-            if "theme" in data: self.theme_var.set(data["theme"])
-            if "mode" in data: self.mode_var.set(data["mode"])
-            if "ttl" in data: self.ttl_var.set(str(data["ttl"]))
-            if "split" in data: self.split_var.set(data["split"])
-            if "repeats" in data: self.repeats_var.set(str(data["repeats"]))
-            if "badsum" in data: self.badsum_var.set(bool(data["badsum"]))
-            if "bypass_all" in data: self.bypass_all_var.set(bool(data["bypass_all"]))
-        except Exception as e:
+
+            if not isinstance(data, dict):
+                raise ValueError("Корень JSON должен быть объектом")
+
+            # Тема
+            theme = data.get("theme")
+            if isinstance(theme, str) and theme in ("Светлая", "Темная"):
+                self.theme_var.set(theme)
+
+            # Режим обхода
+            mode = data.get("mode")
+            if isinstance(mode, str) and mode in MODES:
+                self.mode_var.set(mode)
+
+            # TTL
+            ttl = data.get("ttl")
+            if isinstance(ttl, int) and not isinstance(ttl, bool):
+                if TTL_MIN <= ttl <= TTL_MAX:
+                    self.ttl_var.set(str(ttl))
+
+            # Split
+            split_pos = data.get("split")
+            if isinstance(split_pos, str) and split_pos in MODES_SPLIT:
+                self.split_var.set(split_pos)
+
+            # Повторы
+            repeats = data.get("repeats")
+            if isinstance(repeats, int) and not isinstance(repeats, bool):
+                if 1 <= repeats <= 5:
+                    self.repeats_var.set(str(repeats))
+
+            # Булевы параметры
+            badsum = data.get("badsum")
+            if isinstance(badsum, bool):
+                self.badsum_var.set(badsum)
+
+            bypass_all = data.get("bypass_all")
+            if isinstance(bypass_all, bool):
+                self.bypass_all_var.set(bypass_all)
+
+        except (OSError, json.JSONDecodeError, ValueError) as e:
             self.log(f"⚠ Ошибка загрузки настроек: {e}")
 
     def _save_settings(self):
         """Сохраняет текущие настройки в JSON (с валидацией)."""
         path = self._get_settings_path()
+        temp_path = path + ".tmp"
 
-        # --- ВАЛИДАЦИЯ TTL ---
+        # Валидация TTL
         try:
             ttl = int(self.ttl_var.get())
             if not TTL_MIN <= ttl <= TTL_MAX:
-                ttl = CONFIG.fake_ttl  
+                ttl = CONFIG.fake_ttl
         except (ValueError, TypeError):
             ttl = CONFIG.fake_ttl
 
-        # --- ВАЛИДАЦИЯ ПОВТОРОВ ---
+        # Валидация повторов
         try:
             repeats = int(self.repeats_var.get())
             if not 1 <= repeats <= 5:
@@ -375,25 +441,47 @@ class App:
         except (ValueError, TypeError):
             repeats = CONFIG.fake_repeats
 
-        # --- ВАЛИДАЦИЯ SPLIT ---
+        # Валидация Split
         split_pos = self.split_var.get()
         if split_pos not in MODES_SPLIT:
             split_pos = CONFIG.split_pos
 
+        # Валидация темы и режима
+        theme = self.theme_var.get()
+        if theme not in ("Светлая", "Темная"):
+            theme = "Светлая"
+
+        mode = self.mode_var.get()
+        if mode not in MODES:
+            mode = UI.default_mode
+
         data = {
-            "theme": self.theme_var.get(),
-            "mode": self.mode_var.get(),
-            "ttl": ttl,          
+            "theme": theme,
+            "mode": mode,
+            "ttl": ttl,
             "split": split_pos,
-            "repeats": repeats,   
+            "repeats": repeats,
             "badsum": self.badsum_var.get(),
             "bypass_all": self.bypass_all_var.get()
         }
+
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
-        except Exception as e:
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(temp_path, path)
+
+        except (OSError, TypeError, ValueError) as e:
             self.log(f"❌ Ошибка сохранения настроек: {e}")
+
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except OSError:
+                pass
+
 
     def _get_domains_path(self):
         """Возвращает путь к файлу доменов в папке AppData."""
@@ -407,30 +495,53 @@ class App:
         os.makedirs(base_dir, exist_ok=True)
         return os.path.join(base_dir, 'domains.txt')
 
+    
     def _load_domains(self):
-        """Загружает домены из AppData. Если файла нет — создает с дефолтными."""
+        """Загружает домены из AppData или восстанавливает стандартные."""
         path = self._get_domains_path()
+
         if not os.path.exists(path):
-            # Если файла нет, сохраняем дефолтные при первом запуске
             self.current_domains = list(DEFAULT_DOMAINS)
             self._save_domains_to_file()
-        else:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    lines = [line.strip() for line in f if line.strip()]
-                    self.current_domains = lines
-            except Exception as e:
-                self.log(f"⚠ Ошибка чтения доменов: {e}")
+            return
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = [line.strip() for line in f if line.strip()]
+
+            # Удаляем дубликаты, сохраняя исходный порядок.
+            self.current_domains = list(dict.fromkeys(lines))
+
+            # Восстанавливаем стандартный список, если файл пустой.
+            if not self.current_domains:
                 self.current_domains = list(DEFAULT_DOMAINS)
+                self._save_domains_to_file()
+
+        except (OSError, UnicodeError) as e:
+            self.log(f"⚠ Ошибка чтения доменов: {e}")
+            self.current_domains = list(DEFAULT_DOMAINS)
 
     def _save_domains_to_file(self):
-        """Сохраняет текущий список self.current_domains в файл AppData."""
+        """Атомарно сохраняет текущий список доменов в AppData."""
         path = self._get_domains_path()
+        temp_path = path + ".tmp"
+
         try:
-            with open(path, "w", encoding="utf-8") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 f.write("\n".join(self.current_domains))
-        except Exception as e:
+                f.flush()
+                os.fsync(f.fileno())
+
+            os.replace(temp_path, path)
+
+        except (OSError, UnicodeError, TypeError) as e:
             self.log(f"❌ Ошибка сохранения доменов: {e}")
+
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except OSError:
+                pass
 
     def _clean_domain(self, raw_domain):
         """Максимально строгая очистка и валидация домена (только латиница)."""
@@ -764,11 +875,18 @@ class App:
             messagebox.showerror("Ошибка", f"Не удалось сохранить лог:\n{e}")
 
     def clear_log(self):
-        """Очищает окно лога."""
+        """Очищает окно лога после подтверждения."""
+        if not messagebox.askyesno(
+            "Очистка лога",
+            "Ты действительно хочешь очистить весь лог?"
+        ):
+            return
+
         self.log_text.config(state=tk.NORMAL)
         self.log_text.delete("1.0", tk.END)
         self.log_text.config(state=tk.DISABLED)
         self._log_line_count = 0
+        self.log_count_var.set("Строк: 0")
 
     #------- обработка лога-----------
 
@@ -831,6 +949,8 @@ class App:
                         to_delete = self._log_line_count - UI.max_log_lines
                         self.log_text.delete("1.0", f"{to_delete + 1}.0")
                         self._log_line_count = UI.max_log_lines
+
+                    self.log_count_var.set(f"Строк: {self._log_line_count}")
 
                     if at_bottom:
                         self.log_text.see(tk.END)

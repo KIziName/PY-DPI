@@ -1,10 +1,10 @@
 import argparse
-import os 
 import copy
 import ctypes
 import functools
 import heapq
 import ipaddress
+import os
 import queue
 import random
 import signal
@@ -13,7 +13,6 @@ import sys
 import threading
 import time
 import traceback
-
 from dataclasses import dataclass, replace
 
 # Проверка версии Python

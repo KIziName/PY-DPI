@@ -1,4 +1,5 @@
 import sys
+
 # Если запустить этот файл на Python 3.9 или ниже, он вылетит с SyntaxError
 # при попытке импортировать gui.py (там используется match/case).
 
@@ -38,12 +39,12 @@ import tkinter as tk
 from tkinter import messagebox
 
 from config import (
-    ADMIN_REQUIRED_TITLE,
     ADMIN_REQUIRED_MSG,
+    ADMIN_REQUIRED_TITLE,
     EXIT_NO_ADMIN,
 )
-from helpers import is_admin
 from gui import App
+from helpers import is_admin
 
 if __name__ == "__main__":
     if not is_admin():
