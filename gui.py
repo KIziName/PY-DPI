@@ -1371,13 +1371,13 @@ class App:
                     except OSError:
                         return
 
-                try:
-                    recv_q.put(p, timeout=0.3)
-                except queue.Full:
                     try:
-                        w.send(p)
-                    except OSError:
-                        return
+                        recv_q.put(p, timeout=0.3)
+                    except queue.Full:
+                        try:
+                            w.send(p)
+                        except OSError:
+                            return
 
             rt = threading.Thread(target=receiver, daemon=True)
             rt.start()
@@ -1408,10 +1408,10 @@ class App:
                 except OSError:
                     break
             
-                try:
-                    w.close()
-                except OSError as e:
-                    _log(f"Не удалось закрыть соединение: {e}", "warn")
+            try:
+                w.close()
+            except OSError as e:
+                _log(f"Не удалось закрыть соединение: {e}", "warn")
             
             if not state["is_closed"]:
                 if n > 0:
