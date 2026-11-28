@@ -87,7 +87,7 @@ class DpiBypass:
     """Основной движок обхода DPI (для GUI-версии)."""
 
     def __init__(self, domains, mode, log_cb, done_cb=None, config=CONFIG,
-                 bypass_all=False):
+                bypass_all=False):
         self.domains = set()
         for d in domains:
             d = d.strip().lower().rstrip(".")
@@ -698,7 +698,7 @@ class DpiBypass:
                 return
             now = time.monotonic()
             expired = [k for k, s in self._pending.items()
-                       if now - s.ts > self.cfg.pending_timeout_s]
+                    if now - s.ts > self.cfg.pending_timeout_s]
             states = [self._pending.pop(k) for k in expired]
         for state in states:
             self._flush_as_is(state)
@@ -762,10 +762,10 @@ class DpiBypass:
             return None
 
         hdr_end = payload.find(CRLFCRLF, first_line_end,
-                               first_line_end + HTTP_HEADER_MAX_SCAN)
+                            first_line_end + HTTP_HEADER_MAX_SCAN)
         if hdr_end < 0:
             hdr_end = min(len(payload),
-                          first_line_end + HTTP_HEADER_MAX_SCAN)
+                        first_line_end + HTTP_HEADER_MAX_SCAN)
 
         pos = first_line_end + 2
 
@@ -780,12 +780,12 @@ class DpiBypass:
                 value_start = pos + len(HOST_HEADER)
 
                 while (value_start < line_end
-                       and payload[value_start:value_start + 1] in (b" ", b"\t")):
+                    and payload[value_start:value_start + 1] in (b" ", b"\t")):
                     value_start += 1
 
                 value_end = line_end
                 while (value_end > value_start
-                       and payload[value_end - 1:value_end] in (b" ", b"\t")):
+                    and payload[value_end - 1:value_end] in (b" ", b"\t")):
                     value_end -= 1
 
                 host_bytes = payload[value_start:value_end]
@@ -998,7 +998,7 @@ class DpiBypass:
             # 1. Режимы с фейком (fake+split / fake+disorder)
             if use_fake:
                 fake_payload = self._make_fake(payload, host_off, hostname,
-                                               self.cfg.fake_sni_tld)
+                                            self.cfg.fake_sni_tld)
                 if fake_payload is None:
                     # Не удалось собрать фейк (слишком короткий SNI)
                     self._send_pair(packet, first, second, seq, split_at, disorder)

@@ -101,13 +101,13 @@ class App:
         self.start_btn.pack(side=tk.RIGHT)
 
         ttk.Button(btn_row, text="Сохранить лог", command=self._save_log_to_file
-                   ).pack(side=tk.RIGHT, padx=5)
+                ).pack(side=tk.RIGHT, padx=5)
 
         ttk.Button(btn_row, text="Сбросить лог", command=self.clear_log
-                   ).pack(side=tk.RIGHT, padx=5)
+                ).pack(side=tk.RIGHT, padx=5)
 
         ttk.Button(btn_row, text="Документация", command=self.show_docs
-                   ).pack(side=tk.RIGHT)
+                ).pack(side=tk.RIGHT)
 
         # Нижний ряд правой части (Тема)
         theme_row = ttk.Frame(right_frame)
@@ -163,12 +163,12 @@ class App:
         
         # Кнопка управления доменами
         self.dom_btn = ttk.Button(btn_row, text="⚙ Управление списком доменов", 
-                                  command=self._open_domains_window)
+                                command=self._open_domains_window)
         self.dom_btn.pack(side=tk.LEFT)
 
         self.auto_btn = ttk.Button(btn_row, text="⚡Авто-подбор", command=self.run_auto_test)
         self.auto_btn.pack(side=tk.RIGHT,)
-       
+
         self.diag_btn = ttk.Button(btn_row, text="🩺 Диагностика", command=self.run_diagnostics)
         self.diag_btn.pack(side=tk.RIGHT,)
 
@@ -207,11 +207,11 @@ class App:
 
         self.status = tk.StringVar(value="Готов")
         ttk.Label(root, textvariable=self.status, relief=tk.SUNKEN,
-                  anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
+                anchor="w").pack(fill=tk.X, side=tk.BOTTOM)
 
         self.stats_line = tk.StringVar(value="")
         ttk.Label(root, textvariable=self.stats_line, relief=tk.SUNKEN,
-                  anchor="w", font=UI.log_font).pack(fill=tk.X, side=tk.BOTTOM)
+                anchor="w", font=UI.log_font).pack(fill=tk.X, side=tk.BOTTOM)
 
         # Очереди для межпоточного взаимодействия: log_queue — сообщения
         # для лога, ui_queue — вызовы методов в UI-потоке.
@@ -223,6 +223,7 @@ class App:
         # движка, если пользователь уже нажал Старт снова.
         self._bypass_gen = 0
         self._watchdog_id = None
+        self._stop_timed_out = False
 
         self.mode_var.trace_add("write", lambda *_: self._sync_mode_state())
 
@@ -233,11 +234,11 @@ class App:
         about_frame = ttk.Frame(root, padding=(8, 0, 8, 8))
         about_frame.pack(fill=tk.X, side=tk.BOTTOM)
         ttk.Button(about_frame, text="О программе", command=self.show_about
-                   ).pack(side=tk.RIGHT)
+                ).pack(side=tk.RIGHT)
 
 
         self.log(f"Python: {sys.version.split()[0]}")
-      
+
         self._load_domains()
         self._load_settings()
         self._sync_mode_state()
@@ -286,14 +287,14 @@ class App:
         txt.pack(fill=tk.BOTH, expand=True)
 
         txt.tag_configure("h1", font=("Segoe UI", 13, "bold"),
-                          spacing1=10, spacing3=6)
+                        spacing1=10, spacing3=6)
         txt.tag_configure("h2", font=("Segoe UI", 10, "bold"),
-                          spacing1=8, spacing3=3)
+                        spacing1=8, spacing3=3)
         txt.tag_configure("p", font=("Segoe UI", 9),
-                          lmargin1=8, lmargin2=8, spacing3=2)
+                        lmargin1=8, lmargin2=8, spacing3=2)
         txt.tag_configure("warn", font=("Segoe UI", 9),
-                          foreground="#a04000",
-                          lmargin1=8, lmargin2=8, spacing3=2)
+                        foreground="#a04000",
+                        lmargin1=8, lmargin2=8, spacing3=2)
 
         for kind, text in DOCS_SECTIONS:
             txt.insert(tk.END, text + "\n", kind)
@@ -303,7 +304,7 @@ class App:
         btn_row = ttk.Frame(win, padding=(0, 0, 10, 10))
         btn_row.pack(fill=tk.X)
         ttk.Button(btn_row, text="Закрыть", command=win.destroy
-                   ).pack(side=tk.RIGHT)
+                ).pack(side=tk.RIGHT)
 
         win.bind("<Escape>", lambda e: win.destroy())
 
@@ -319,10 +320,10 @@ class App:
         frame.pack(fill=tk.BOTH, expand=True)
 
         ttk.Label(frame, text=f"Версия: {APP_VERSION}"
-                  ).pack(anchor="w")
+                ).pack(anchor="w")
 
         ttk.Label(frame, text=f"Автор: {APP_AUTHOR}"
-                  ).pack(anchor="w")
+                ).pack(anchor="w")
 
         link_row = ttk.Frame(frame)
         link_row.pack(anchor="w", pady=(10, 0))
@@ -350,7 +351,7 @@ class App:
             fill=tk.X, pady=12)
 
         ttk.Button(frame, text="Закрыть", command=win.destroy
-                   ).pack(anchor="e")
+                ).pack(anchor="e")
 
         self._center_window(win)
 
@@ -609,7 +610,7 @@ class App:
         
         # Поле ввода: убеждаемся, что state=tk.NORMAL (по умолчанию)
         input_text = tk.Text(text_frame, height=6, font=("Consolas", 9), 
-                             yscrollcommand=text_scroll.set, wrap="none")
+                            yscrollcommand=text_scroll.set, wrap="none")
         input_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         text_scroll.config(command=input_text.yview)
 
@@ -1109,7 +1110,10 @@ class App:
             bypass_all=bypass_all,
         )
 
-        self.thread = threading.Thread(target=self.bypass.run, daemon=True)
+        self.thread = threading.Thread(
+            target=self.bypass.run,
+            daemon=True
+        )
         self.thread.start()
 
         self._set_controls_enabled(False)
@@ -1126,6 +1130,7 @@ class App:
         self.status.set("Остановлено")
         self._set_controls_enabled(True)
 
+    
     def _stop_bypass(self):
         """Инициирует остановку движка с защитным таймером (watchdog)."""
         b = self.bypass
@@ -1138,19 +1143,30 @@ class App:
         gen = self._bypass_gen
 
         def _watchdog():
-            # Если поток не завершился штатно за RT.stop_watchdog_ms —
-            # принудительно отпускаем UI, чтобы окно не «залипло».
+            """Проверяет, завершился ли поток движка после тайм-аута."""
             self._watchdog_id = None
+
             if self._bypass_gen != gen:
                 return
-            if self.thread is None:
+
+            thread = self.thread
+            if thread is None:
                 return
-            self.log("⚠ Поток не завершился штатно за "
-                     f"{RT.stop_watchdog_ms // 1000} с — принудительный сброс UI")
-            self.bypass = None
-            self.thread = None
-            self._bypass_gen += 1
-            self._reset_ui()
+
+            if thread.is_alive():
+                self._stop_timed_out = True
+                self.status.set("Движок не остановился — требуется перезапуск")
+
+                self.log("⚠ Движок не остановился за отведённое время. Требуется перезапуск PY-DPI.")
+
+                messagebox.showwarning(
+                    "Требуется перезапуск",
+                    "Не удалось остановить движок за отведённое время.\n\n"
+                    "Закройте PY-DPI и запустите программу заново."
+                )
+                return
+
+            self._on_bypass_done(gen)
 
         if self._watchdog_id is not None:
             try:
@@ -1159,29 +1175,34 @@ class App:
                 pass
             self._watchdog_id = None
 
-        try:
-            self._watchdog_id = self.root.after(
-                RT.stop_watchdog_ms, _watchdog)
-        except tk.TclError:
-            self._watchdog_id = None
+        self._watchdog_id = self.root.after(
+            RT.stop_watchdog_ms,
+            _watchdog
+        )
 
-        try:
-            b.stop()
-        except Exception:
-            pass
+        b.stop()
 
     @on_ui
     def _on_bypass_done(self, gen):
         """Колбэк от движка: вызывается, когда поток обхода полностью завершен."""
-        # Игнорируем колбэк устаревшего поколения движка.
         if gen != self._bypass_gen:
             return
+
+        # После тайм-аута GUI остаётся заблокированным до перезапуска.
+        if self._stop_timed_out:
+            return
+
+        thread = self.thread
+        if thread is not None and thread.is_alive():
+            return
+
         if self._watchdog_id is not None:
             try:
                 self.root.after_cancel(self._watchdog_id)
             except tk.TclError:
                 pass
             self._watchdog_id = None
+
         self.bypass = None
         self.thread = None
         self._reset_ui()
